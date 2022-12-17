@@ -120,7 +120,10 @@ impl Default for App {
             .unwrap(),
         );
 
-        let windows: Vec<Box<dyn Window>> = vec![Box::new(WindowAddFeed::default())];
+        let windows: Vec<Box<dyn Window>> = vec![
+            Box::new(WindowAddFeed::default()),
+            Box::new(WindowAddFolder::default()),
+        ];
         let open = BTreeSet::default();
 
         Self {
@@ -165,6 +168,8 @@ impl eframe::App for App {
                             .clicked()
                         {
                             dbg!("feed");
+                            set_open(&mut self.open, "Add Feed", true);
+                            ui.close_menu()
                         }
                         let img = self.icons.get("folder").unwrap();
                         if ui
@@ -176,7 +181,7 @@ impl eframe::App for App {
                             .clicked()
                         {
                             dbg!("folder");
-                            set_open(&mut self.open, "Add Feed", true);
+                            set_open(&mut self.open, "Add Folder", true);
                             ui.close_menu()
                         }
                     });

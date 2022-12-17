@@ -35,7 +35,7 @@ impl Window for WindowAddFeed {
     }
 
     fn show(&mut self, ctx: &egui::Context, open: &mut bool, size: egui::Vec2) {
-        let window = egui::Window::new(self.name())
+        egui::Window::new(self.name())
             .resizable(false)
             .default_width(280.0)
             .default_pos(size.sub(egui::vec2(280.0, 600.0)).div(2.0).to_pos2())
@@ -84,7 +84,50 @@ impl View for WindowAddFeed {
             |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.button("Add");
-                    ui.button("Cancel");
+                    // if ui.button("Cancel").clicked() {
+                    // }
+                });
+            },
+        );
+    }
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct WindowAddFolder {
+    name: String,
+}
+
+impl Window for WindowAddFolder {
+    fn name(&self) -> &'static str {
+        "Add Folder"
+    }
+
+    fn show(&mut self, ctx: &egui::Context, open: &mut bool, size: egui::Vec2) {
+        egui::Window::new(self.name())
+            .resizable(false)
+            .default_width(280.0)
+            .default_pos(size.sub(egui::vec2(280.0, 600.0)).div(2.0).to_pos2())
+            // .vscroll(false)
+            .open(open)
+            .show(ctx, |ui| self.ui(ui));
+    }
+}
+
+impl View for WindowAddFolder {
+    fn ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.add_sized((50., 24.), Label::new("Name:"));
+            ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Write folder name"));
+        });
+        ui.end_row();
+
+        ui.with_layout(
+            egui::Layout::default().with_cross_align(Align::RIGHT),
+            |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.button("Add");
+                    // if ui.button("Cancel").clicked() {}
                 });
             },
         );
