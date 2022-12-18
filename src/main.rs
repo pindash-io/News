@@ -139,7 +139,12 @@ impl App {
         let Self { windows, open, .. } = self;
         for window in windows {
             let mut is_open = open.contains(window.name());
-            window.show(ctx, &mut is_open, size);
+            if is_open {
+                window.show(ctx, &mut is_open, size);
+            }
+            if window.is_closed() {
+                is_open = false;
+            }
             set_open(open, window.name(), is_open);
         }
     }
@@ -168,7 +173,7 @@ impl eframe::App for App {
                             .clicked()
                         {
                             dbg!("feed");
-                            set_open(&mut self.open, "Add Feed", true);
+                            set_open(&mut self.open, WindowAddFeed::NAME, true);
                             ui.close_menu()
                         }
                         let img = self.icons.get("folder").unwrap();
@@ -181,7 +186,7 @@ impl eframe::App for App {
                             .clicked()
                         {
                             dbg!("folder");
-                            set_open(&mut self.open, "Add Folder", true);
+                            set_open(&mut self.open, WindowAddFolder::NAME, true);
                             ui.close_menu()
                         }
                     });

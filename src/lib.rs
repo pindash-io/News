@@ -1,13 +1,11 @@
-use std::ops::Div;
-use std::ops::Sub;
+use std::collections::BTreeSet;
+use std::ops::{Div, Sub};
 
-use eframe::egui;
+use eframe::{egui, emath};
 
 mod components;
 
 pub use components::*;
-use eframe::egui::Label;
-use eframe::emath::Align;
 
 pub trait View {
     fn ui(&mut self, ui: &mut egui::Ui);
@@ -20,6 +18,9 @@ pub trait Window {
 
     /// Show windows, etc
     fn show(&mut self, ctx: &egui::Context, open: &mut bool, size: egui::Vec2);
+
+    /// status
+    fn is_closed(&self) -> bool;
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -27,14 +28,20 @@ pub trait Window {
 pub struct WindowAddFeed {
     url: String,
     name: String,
+    closed: bool,
+}
+
+impl WindowAddFeed {
+    pub const NAME: &'static str = "Add Feed";
 }
 
 impl Window for WindowAddFeed {
     fn name(&self) -> &'static str {
-        "Add Feed"
+        Self::NAME
     }
 
     fn show(&mut self, ctx: &egui::Context, open: &mut bool, size: egui::Vec2) {
+        self.closed = false;
         egui::Window::new(self.name())
             .resizable(false)
             .default_width(280.0)
@@ -43,31 +50,27 @@ impl Window for WindowAddFeed {
             .open(open)
             .show(ctx, |ui| self.ui(ui));
     }
+
+    fn is_closed(&self) -> bool {
+        self.closed
+    }
 }
 
 impl View for WindowAddFeed {
     fn ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            // ui.label("URL:            ");
-            ui.add_sized((50., 24.), Label::new("URL:"));
+            ui.add_sized((50., 24.), egui::Label::new("URL:"));
             ui.add(egui::TextEdit::singleline(&mut self.url).hint_text("Write feed url"));
         });
         ui.end_row();
         ui.horizontal(|ui| {
-            // ui.label("Name:           ");
-            ui.add_sized((50., 24.), Label::new("Name:"));
-            ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Write feed name"));
+            ui.add_sized((50., 24.), egui::Label::new("Name:"));
+            ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Opional"));
         });
         ui.end_row();
-        // ui.horizontal_wrapped(|ui| {
-        //     // ui.label("Name:  ");
-        //     ui.add_sized((50., 20.), Label::new("Name:"));
-        //     ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Write feed url"));
-        // });
 
         ui.horizontal(|ui| {
-            // ui.label("Folder:");
-            ui.add_sized((50., 24.), Label::new("Folder:"));
+            ui.add_sized((50., 24.), egui::Label::new("Folder:"));
             egui::ComboBox::from_label("")
                 // .selected_text(format!("{:?}", radio))
                 .show_ui(ui, |ui| {
@@ -80,12 +83,13 @@ impl View for WindowAddFeed {
         ui.end_row();
 
         ui.with_layout(
-            egui::Layout::default().with_cross_align(Align::RIGHT),
+            egui::Layout::default().with_cross_align(emath::Align::RIGHT),
             |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    ui.button("Add");
-                    // if ui.button("Cancel").clicked() {
-                    // }
+                    if ui.button("Add").clicked() {
+                        self.closed = true;
+                        tracing::info!("add feed");
+                    }
                 });
             },
         );
@@ -96,38 +100,49 @@ impl View for WindowAddFeed {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct WindowAddFolder {
     name: String,
+    closed: bool,
+}
+
+impl WindowAddFolder {
+    pub const NAME: &'static str = "Add Folder";
 }
 
 impl Window for WindowAddFolder {
     fn name(&self) -> &'static str {
-        "Add Folder"
+        Self::NAME
     }
 
     fn show(&mut self, ctx: &egui::Context, open: &mut bool, size: egui::Vec2) {
+        self.closed = false;
         egui::Window::new(self.name())
             .resizable(false)
             .default_width(280.0)
             .default_pos(size.sub(egui::vec2(280.0, 600.0)).div(2.0).to_pos2())
-            // .vscroll(false)
             .open(open)
             .show(ctx, |ui| self.ui(ui));
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed
     }
 }
 
 impl View for WindowAddFolder {
     fn ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.add_sized((50., 24.), Label::new("Name:"));
+            ui.add_sized((50., 24.), egui::Label::new("Name:"));
             ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Write folder name"));
         });
         ui.end_row();
 
         ui.with_layout(
-            egui::Layout::default().with_cross_align(Align::RIGHT),
+            egui::Layout::default().with_cross_align(emath::Align::RIGHT),
             |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    ui.button("Add");
-                    // if ui.button("Cancel").clicked() {}
+                    if ui.button("Add").clicked() {
+                        self.closed = true;
+                        tracing::info!("add folder")
+                    }
                 });
             },
         );
