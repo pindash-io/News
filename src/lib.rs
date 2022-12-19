@@ -7,6 +7,7 @@ use tokio::sync::watch::Sender;
 pub use components::*;
 pub mod db;
 pub mod models;
+pub mod ui;
 pub mod windows;
 
 #[derive(Clone, Debug, PartialEq)]
