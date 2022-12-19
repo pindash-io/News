@@ -44,6 +44,6 @@ This project is licensed under the [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-AP
 
 ## Author
 
-- [Mastodon](https://fosstodon.org/@fundon)
+- [@fundon@fosstodon.org](https://fosstodon.org/@fundon)
 
-- [Twitter](https://twitter.com/_fundon)
+- [@\_fundon](https://twitter.com/_fundon)
