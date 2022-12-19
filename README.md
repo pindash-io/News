@@ -2,6 +2,8 @@
 
 `News` 是一款阅读器，当前支持 RSS 订阅和阅读，后续会开发更多有意思的功能。
 
+![App](screenshot.png)
+
 ## Repo
 
 https://github.com/pindash-io/News
