@@ -211,11 +211,12 @@ pub fn update_source(
     url: String,
     name: String,
     id: u64,
-    folder_id: u64,
+    folder_id: Option<u64>,
 ) -> Result<()> {
     let t = conn.transaction()?;
-    t.execute(
-        r#"
+    if let Some(fid) = folder_id {
+        t.execute(
+            r#"
         UPDATE
             folder_sources
         SET
@@ -223,15 +224,16 @@ pub fn update_source(
         WHERE
             s = ?2
         "#,
-        [folder_id, id],
-    )?;
+            [fid, id],
+        )?;
+    }
     t.execute(
         r#"
         UPDATE
             sources
         SET
-            name = ?1,
-            url = ?2
+            url = ?1,
+            name = ?2
         WHERE
             id = ?3
         "#,

@@ -180,8 +180,9 @@ fn main() -> Result<()> {
                             url.to_string(),
                             name.to_string(),
                             *id,
-                            *folder_id,
+                            prev_folder_id.is_some().then_some(*folder_id),
                         ) {
+                            // need opt!
                             if let Ok(mut folders) = folders_writer.write() {
                                 // remove
                                 if let Some(pfid) = prev_folder_id {
