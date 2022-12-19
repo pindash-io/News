@@ -31,10 +31,15 @@ pub enum Messge {
 pub struct Store {
     pub sender: Sender<Messge>,
     pub folders: Arc<RwLock<Vec<models::Folder>>>,
+    pub feeds: Arc<RwLock<Vec<models::Feed>>>,
 }
 
 impl Store {
     pub fn new(sender: Sender<Messge>, folders: Arc<RwLock<Vec<models::Folder>>>) -> Self {
-        Self { sender, folders }
+        Self {
+            sender,
+            folders,
+            feeds: Arc::default(),
+        }
     }
 }

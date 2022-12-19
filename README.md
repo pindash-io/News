@@ -12,6 +12,8 @@ https://github.com/pindash-io/News
 
 * [ ] 分享到其他知识工具：Affine, Obsidian, Logseq, etc.
 
+* [ ] Web
+
 ## Development
 
 ```console

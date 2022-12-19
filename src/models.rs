@@ -14,3 +14,13 @@ pub struct Source {
     pub name: String,
     pub url: String,
 }
+
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
+pub struct Feed {
+    pub id: u64,
+    pub source_id: u64,
+    pub title: String,
+    pub content: String,
+    pub author: String,
+    pub created_at: u64,
+}

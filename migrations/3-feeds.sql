@@ -10,3 +10,5 @@ CREATE TABLE IF NOT EXISTS feeds (
     )
   )
 );
+
+ALTER TABLE sources ADD COLUMN last_seen_at INTEGER NOT NULL DEFAULT 0;

@@ -68,7 +68,8 @@ fn main() -> Result<()> {
             M::up(include_str!("../migrations/0-sources.sql")),
             M::up(include_str!("../migrations/1-folders.sql")),
             M::up(include_str!("../migrations/2-default-folder.sql")),
-            // M::up(include_str!("../migrations/3-feeds.sql")),
+            M::up(include_str!("../migrations/3-feeds.sql")),
+            M::up(include_str!("../migrations/4-seed.sql")),
         ]);
 
         let mut conn = pool.get()?;
@@ -281,7 +282,7 @@ struct App {
 
     store: Store,
 
-    source_id: u64,
+    source: models::Source,
 }
 
 impl App {
@@ -340,7 +341,7 @@ impl App {
             icons,
             windows,
             open,
-            source_id: 0,
+            source: models::Source::default(),
         }
     }
 
@@ -425,8 +426,36 @@ impl eframe::App for App {
                         let folder_img = self.icons.get("folder").unwrap();
                         let link_img = self.icons.get("link").unwrap();
                         let open = &mut self.open;
-                        let source_id = &mut self.source_id;
-                        let Store { folders, sender } = &self.store;
+                        let current_source = &mut self.source;
+                        let Store { folders, sender, .. } = &self.store;
+
+                        // fn circle_icon(ui: &mut egui::Ui, openness: f32, response: &egui::Response) {
+                        //     let stroke = ui.style().interact(&response).fg_stroke;
+                        //     let radius = egui::lerp(2.0..=3.0, openness);
+                        //     ui.painter().circle_filled(response.rect.center(), radius, stroke.color);
+                        // }
+                        // let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
+                        //     ui.ctx(),
+                        //     ui.make_persistent_id("my_collapsing_state"),
+                        //     false,
+                        // );
+                        // // let header_res = ui.horizontal(|ui| {
+                        //    let header_res =          ui.with_layout(
+                        //                 egui::Layout::top_down_justified(egui::Align::LEFT),
+                        //                 |ui| {
+                        //                     ui.horizontal(|ui| {
+                        //     state.show_toggle_button(ui, circle_icon);
+                        //     let id = current_source.id;
+                        //                             ui
+                        //                                 .selectable_value(
+                        //                                     &mut current_source.id,
+                        //                                     id,
+                        //                                     "dsfldsl sdfjlds ",
+                        //                                 );
+                        // });
+                        //                     });
+                        // state.show_body_indented(&header_res.response, ui, |ui| ui.label("Body"));
+
                         if let Ok(folders) = folders.try_read() {
                             folders.iter().for_each(move |folder| {
                                 // ui.collapsing(folder.name.to_string(), |ui| {
@@ -487,7 +516,7 @@ impl eframe::App for App {
                                                 sources.iter().for_each(|source| {
                                                     if ui
                                                         .selectable_value(
-                                                            source_id,
+                                                            &mut current_source.id,
                                                             source.id,
                                                             source.name.to_string(),
                                                         )
@@ -533,7 +562,7 @@ impl eframe::App for App {
                                                         })
                                                         .changed()
                                                     {
-                                                        *source_id = source.id;
+                                                        *current_source = source.clone();
                                                     }
                                                 });
                                             }
@@ -546,8 +575,29 @@ impl eframe::App for App {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Central Panel");
-            ui.horizontal(|ui| {});
+            ui.horizontal(|ui| {
+                let mut name = self.source.name.to_string();
+                if name.is_empty() {
+                    name.push_str("Feeds");
+                }
+                let link_img = self.icons.get("link").unwrap();
+                ui.image(link_img.texture_id(ctx), link_img.size_vec2() * 0.5);
+                ui.heading(name);
+            });
+
+            ui.separator();
+
+            egui::SidePanel::left("Feeds SideBar")
+                .resizable(true)
+                .default_width(360.)
+                .width_range(128.0..=360.)
+                .show_inside(ui, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {});
+                });
+
+            egui::CentralPanel::default().show_inside(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {});
+            });
         });
     }
 }
