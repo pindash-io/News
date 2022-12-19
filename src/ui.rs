@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::ops::Deref;
@@ -14,14 +15,6 @@ use std::vec;
 
 use anyhow::{Error, Result};
 use eframe::egui;
-use eframe::egui::style::Margin;
-use eframe::egui::Button;
-use eframe::egui::ImageButton;
-use eframe::egui::Sense;
-use eframe::epaint::ahash::{HashMap, HashMapExt};
-use eframe::epaint::ColorImage;
-use eframe::epaint::Rect;
-use eframe::epaint::Shape;
 use egui_extras::RetainedImage;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -131,7 +124,7 @@ impl eframe::App for App {
                     ui.menu_button_image(img.texture_id(ctx), img.size_vec2() * 0.5, "Add", |ui| {
                         let img = self.icons.get("rss").unwrap();
                         if ui
-                            .add(Button::image_and_text(
+                            .add(egui::Button::image_and_text(
                                 img.texture_id(ctx),
                                 img.size_vec2() * 0.5,
                                 "Feed",
@@ -148,7 +141,7 @@ impl eframe::App for App {
                         }
                         let img = self.icons.get("folder").unwrap();
                         if ui
-                            .add(Button::image_and_text(
+                            .add(egui::Button::image_and_text(
                                 img.texture_id(ctx),
                                 img.size_vec2() * 0.5,
                                 "Folder",

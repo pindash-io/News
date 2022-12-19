@@ -6,6 +6,7 @@ use std::ops::Deref;
 use std::ops::Div;
 use std::path::Path;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{
     mpsc::{self, Sender},
     Arc, RwLock,
@@ -19,7 +20,6 @@ use eframe::egui::style::Margin;
 use eframe::egui::Button;
 use eframe::egui::ImageButton;
 use eframe::egui::Sense;
-use eframe::epaint::ahash::{HashMap, HashMapExt};
 use eframe::epaint::ColorImage;
 use eframe::epaint::Rect;
 use eframe::epaint::Shape;
@@ -242,6 +242,20 @@ fn main() -> Result<()> {
                                 }
                             }
                         }
+                    }
+                    Message::FetchFeedsBySource(url, id) => {
+                        let url = url.to_string();
+                        tokio::task::spawn(async move {
+                            let content = reqwest::get(url).await?.text().await?;
+                            let feed = syndication::Feed::from_str(&content)
+                                .map_err(|e| anyhow::anyhow!(e))?;
+
+                            // match feed {
+                            //     syndication::Feed()
+                            // }
+
+                            Ok::<(), Error>(())
+                        });
                     }
                     _ => {}
                 }
