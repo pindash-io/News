@@ -3,6 +3,7 @@ mod components;
 use std::sync::{mpsc::Sender, Arc, RwLock};
 
 pub use components::*;
+pub mod db;
 pub mod models;
 pub mod windows;
 
@@ -16,6 +17,8 @@ pub enum Messge {
     DeleteFolder(String, u64),
     /// (name, id)
     RenameFolder(String, u64),
+    ///
+    RefreshFolders,
 }
 
 #[derive(Debug, Clone)]

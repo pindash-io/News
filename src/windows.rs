@@ -54,10 +54,10 @@ impl Window for WindowAddFeed {
         ctx: &egui::Context,
         open: &mut bool,
         size: egui::Vec2,
-        data: Option<Messge>,
+        mut data: Option<Messge>,
     ) {
         // must
-        if self.folder_id == 0 {
+        if let Some(Messge::RefreshFolders) = data.take() {
             if let Ok(reader) = store.folders.read() {
                 self.folder_id = reader[0].id;
                 self.folder_name = reader[0].name.to_string();
@@ -232,7 +232,11 @@ impl Window for WindowDeleteFolder {
         data: Option<Messge>,
     ) {
         if let Some(Messge::DeleteFolder(name, id)) = data {
-            self.folder = models::Folder { id, name };
+            self.folder = models::Folder {
+                id,
+                name,
+                sources: None,
+            };
         }
         self.closed = false;
         egui::Window::new(self.name())
@@ -303,7 +307,11 @@ impl Window for WindowRenameFolder {
     ) {
         if let Some(Messge::RenameFolder(name, id)) = data.take() {
             self.name = name.clone();
-            self.folder = models::Folder { id, name };
+            self.folder = models::Folder {
+                id,
+                name,
+                sources: None,
+            };
         }
         self.closed = false;
         egui::Window::new(self.name())

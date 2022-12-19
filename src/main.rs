@@ -85,6 +85,7 @@ fn main() -> Result<()> {
             Ok(models::Folder {
                 id: row.get(0)?,
                 name: row.get(1)?,
+                sources: None,
             })
         })
         .map(|rows| rows.filter_map(Result::ok).collect::<Vec<_>>())?;
@@ -102,69 +103,27 @@ fn main() -> Result<()> {
             for m in rx.iter() {
                 tracing::info!("{:?}", m);
                 match m {
-                    Messge::NewSource(url, name, folder) => {}
+                    Messge::NewSource(url, name, folder_id) => {
+                        if let Ok(id) = db::create_source(&mut conn, url, name, folder_id) {
+                            tracing::info!("{}", id);
+                        }
+                    }
                     Messge::NewFolder(name) => {
-                        if let Ok(folder) = conn.query_row(
-                            r#"
-                            INSERT INTO folders(name)
-                            VALUES(?1)
-                            RETURNING
-                                id,
-                                name 
-                            "#,
-                            [name],
-                            |row| {
-                                Ok(models::Folder {
-                                    id: row.get(0)?,
-                                    name: row.get(1)?,
-                                })
-                            },
-                        ) {
+                        if let Ok(folder) = db::create_folder(&mut conn, name) {
                             if let Ok(mut folders) = folders_writer.write() {
                                 folders.push(folder);
                             }
                         }
                     }
-                    Messge::DeleteFolder(name, id) => {
-                        let mut t = conn.transaction()?;
-                        t.execute(
-                            r#"
-                            UPDATE
-                                folder_sources
-                            SET
-                                f = 1
-                            WHERE
-                                f = ?1
-                        "#,
-                            [id],
-                        )?;
-                        t.execute(
-                            r#"
-                            DELETE FROM
-                                folders
-                            WHERE
-                                id = ?1
-                        "#,
-                            [id],
-                        )?;
-                        t.commit()?;
-                        if let Ok(mut folders) = folders_writer.write() {
-                            folders.retain(|f| f.id != id);
+                    Messge::DeleteFolder(_, id) => {
+                        if let Ok(()) = db::delete_folder(&mut conn, id) {
+                            if let Ok(mut folders) = folders_writer.write() {
+                                folders.retain(|f| f.id != id);
+                            }
                         }
                     }
                     Messge::RenameFolder(name, id) => {
-                        if conn
-                            .execute(
-                                r#"
-                        UPDATE
-                            folders
-                        SET
-                            name = ?1
-                        WHERE
-                            id = ?2
-                        "#,
-                                rusqlite::params![name.clone(), id],
-                            )
+                        if db::rename_folder(&mut conn, name.clone(), id)
                             .ok()
                             .filter(|n| *n == 1)
                             .is_some()
@@ -182,6 +141,7 @@ fn main() -> Result<()> {
                             }
                         }
                     }
+                    _ => {}
                 }
             }
         }
@@ -270,10 +230,9 @@ impl App {
         let Self { windows, open, .. } = self;
         for window in windows {
             let mut is_open = open.contains_key(window.name());
-            let mut data = None;
             if is_open {
-                data = open.get(window.name()).cloned().unwrap();
-                window.show(&self.store, ctx, &mut is_open, size, data.clone());
+                let data = open.get(window.name()).cloned().unwrap();
+                window.show(&self.store, ctx, &mut is_open, size, data);
             }
             if window.is_closed() {
                 is_open = false;
@@ -305,7 +264,12 @@ impl eframe::App for App {
                             .clicked()
                         {
                             ui.close_menu();
-                            set_open(&mut self.open, windows::WindowAddFeed::NAME, true, None);
+                            set_open(
+                                &mut self.open,
+                                windows::WindowAddFeed::NAME,
+                                true,
+                                Some(Messge::RefreshFolders),
+                            );
                         }
                         let img = self.icons.get("folder").unwrap();
                         if ui
