@@ -69,26 +69,7 @@ fn main() -> Result<()> {
     // 2️⃣ Update the database schema, atomically
     dbg!(migrations.to_latest(&mut conn)?);
 
-    let mut stmt = conn.prepare(
-        r#"
-        SELECT
-            id,
-            name
-        FROM
-            folders
-        ORDER BY id ASC
-    "#,
-    )?;
-
-    let folders = stmt
-        .query_map([], |row| {
-            Ok(models::Folder {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                sources: None,
-            })
-        })
-        .map(|rows| rows.filter_map(Result::ok).collect::<Vec<_>>())?;
+    let folders = db::fetch_folders(&mut conn)?;
 
     tracing::info!("{:?}", folders);
     // drop(conn);
@@ -350,7 +331,22 @@ impl eframe::App for App {
                                         }
                                     });
                                 })
-                                .body(|ui| {});
+                                .body(|ui| {
+                                    ui.with_layout(
+                                        egui::Layout::top_down_justified(egui::Align::LEFT),
+                                        |ui| {
+                                            if let Some(sources) = &folder.sources {
+                                                sources.iter().for_each(|source| {
+                                                    ui.toggle_value(
+                                                        &mut true,
+                                                        source.name.to_string(),
+                                                    );
+                                                    // ui.on_hover_text(source.name.to_string());
+                                                });
+                                            }
+                                        },
+                                    );
+                                });
                             });
                         }
                     });

@@ -1,9 +1,76 @@
-use anyhow::Result;
+use anyhow::{Context, Error, Result};
 
 use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::models::Folder;
+
+pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Result<Vec<Folder>> {
+    let folders = conn
+        .prepare_cached(
+            r#"
+        WITH f AS (
+            SELECT
+                id,
+                name
+            FROM
+                folders
+        ),
+        fs AS (
+            SELECT
+                f,
+                s
+            FROM
+                folder_sources
+        ),
+        s AS (
+            SELECT
+                s.id,
+                s.name,
+                s.url,
+                fs.f AS fid
+            FROM
+                sources AS s
+            INNER JOIN
+                fs
+            ON
+                fs.s = s.id
+        )
+        SELECT
+            f.id,
+            f.name,
+            (CASE count(s.fid)
+            WHEN 0 THEN NULL
+            ELSE json_group_array(json_object(
+                'id',
+                s.id,
+                'name',
+                s.name,
+                'url',
+                s.url
+            ))
+        END) AS folders 
+        FROM
+            f
+        LEFT JOIN
+            s
+        ON
+            s.fid = f.id 
+        GROUP BY
+            f.id
+        "#,
+        )?
+        .query_map([], |row| {
+            let id = row.get(0)?;
+            let name = row.get(1)?;
+            let sources = row
+                .get::<_, Option<serde_json::Value>>(2)?
+                .and_then(|v| serde_json::from_value(v).ok());
+            Ok(Folder { id, name, sources })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect::<Vec<_>>())?;
+    Ok(folders)
+}
 
 pub fn create_source(
     mut conn: &mut PooledConnection<SqliteConnectionManager>,
@@ -12,7 +79,7 @@ pub fn create_source(
     folder_id: u64,
 ) -> Result<u64> {
     let t = conn.transaction()?;
-    let id = dbg!(t.query_row(
+    let id = t.query_row(
         r#"
         INSERT INTO sources (
             url,
@@ -27,8 +94,8 @@ pub fn create_source(
         "#,
         [url, name],
         |row| row.get(0),
-    ))?;
-    dbg!(t.execute(
+    )?;
+    t.execute(
         r#"
         INSERT INTO folder_sources (
             s,
@@ -40,8 +107,8 @@ pub fn create_source(
         )
         "#,
         [id, folder_id],
-    ))?;
-    dbg!(t.commit())?;
+    )?;
+    t.commit()?;
     Ok(id)
 }
 

@@ -316,6 +316,7 @@ impl Window for WindowRenameFolder {
         self.closed = false;
         egui::Window::new(self.name())
             .resizable(false)
+            .collapsible(false)
             .default_width(280.0)
             .default_pos(size.sub(egui::vec2(280.0, 600.0)).div(2.0).to_pos2())
             .open(open)
