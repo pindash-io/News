@@ -2,6 +2,7 @@
 
 use std::env;
 use std::fs;
+use std::ops::Deref;
 use std::ops::Div;
 use std::path::Path;
 use std::path::PathBuf;
@@ -16,6 +17,7 @@ use anyhow::{Error, Result};
 use eframe::egui;
 use eframe::egui::style::Margin;
 use eframe::egui::Button;
+use eframe::egui::ImageButton;
 use eframe::egui::Sense;
 use eframe::epaint::ahash::{HashMap, HashMapExt};
 use eframe::epaint::ColorImage;
@@ -44,80 +46,197 @@ fn main() -> Result<()> {
     let db = SqliteConnectionManager::file(config_dir.join("news.db")).with_init(|c| {
         c.execute_batch(
             r#"
-        PRAGMA synchronous = NORMAL;
-        PRAGMA journal_mode = WAL;
-        PRAGMA foreign_keys = ON;
-        "#,
+                PRAGMA synchronous = NORMAL;
+                PRAGMA journal_mode = WAL;
+                PRAGMA foreign_keys = ON;
+                "#,
         )?;
         Ok(())
     });
-    tracing::info!("{:?}", config_dir);
-    tracing::info!("{:?}", db);
 
     let pool = r2d2::Pool::new(db)?;
 
-    // 1️⃣ Define migrations
-    let migrations = Migrations::new(vec![
-        M::up(include_str!("../migrations/0-sources.sql")),
-        M::up(include_str!("../migrations/1-folders.sql")),
-        M::up(include_str!("../migrations/2-default-folder.sql")),
-    ]);
+    let folders = Arc::new(RwLock::new(Vec::new()));
 
-    dbg!(&migrations);
-
-    let mut conn = pool.get()?;
-    // 2️⃣ Update the database schema, atomically
-    dbg!(migrations.to_latest(&mut conn)?);
-
-    let folders = db::fetch_folders(&mut conn)?;
-
-    tracing::info!("{:?}", folders);
-    // drop(conn);
-
-    let folders = Arc::new(RwLock::new(folders));
-    let (tx, rx) = mpsc::channel::<Messge>();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
 
     let folders_writer = folders.clone();
-    thread::spawn(move || {
+    rt.block_on(async {
+        let migrations = Migrations::new(vec![
+            M::up(include_str!("../migrations/0-sources.sql")),
+            M::up(include_str!("../migrations/1-folders.sql")),
+            M::up(include_str!("../migrations/2-default-folder.sql")),
+            // M::up(include_str!("../migrations/3-feeds.sql")),
+        ]);
+
         let mut conn = pool.get()?;
-        loop {
-            for m in rx.iter() {
-                tracing::info!("{:?}", m);
-                match m {
+        migrations.to_latest(&mut conn)?;
+
+        let folders = db::fetch_folders(&mut conn)?;
+        tracing::info!("{:?}", folders);
+
+        if let Ok(mut fd) = folders_writer.write() {
+            fd.extend_from_slice(&folders);
+        }
+
+        Ok::<(), Error>(())
+    });
+
+    let (tx, mut rx) = tokio::sync::watch::channel::<Messge>(Messge::Normal);
+
+    thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+
+        rt.block_on(async move {
+            let mut conn = pool.get()?;
+
+            while rx.changed().await.is_ok() {
+                let msg = rx.borrow();
+                tracing::info!("{:?}", &msg);
+                match msg.deref() {
                     Messge::NewSource(url, name, folder_id) => {
-                        if let Ok(id) = db::create_source(&mut conn, url, name, folder_id) {
-                            tracing::info!("{}", id);
+                        if let Ok(id) = db::create_source(
+                            &mut conn,
+                            url.to_string(),
+                            name.to_string(),
+                            *folder_id,
+                        ) {
+                            if let Ok(mut folders) = folders_writer.write() {
+                                if let Some(folder) = folders.iter_mut().find_map(|folder| {
+                                    if folder.id == *folder_id {
+                                        Some(folder)
+                                    } else {
+                                        None
+                                    }
+                                }) {
+                                    if let Some(sources) = folder.sources.as_mut() {
+                                        sources.push(models::Source {
+                                            id,
+                                            name: name.to_string(),
+                                            url: url.to_string(),
+                                        });
+                                    }
+                                }
+                            }
                         }
                     }
                     Messge::NewFolder(name) => {
-                        if let Ok(folder) = db::create_folder(&mut conn, name) {
+                        if let Ok(folder) = db::create_folder(&mut conn, name.to_string()) {
                             if let Ok(mut folders) = folders_writer.write() {
                                 folders.push(folder);
                             }
                         }
                     }
                     Messge::DeleteFolder(_, id) => {
-                        if let Ok(()) = db::delete_folder(&mut conn, id) {
+                        if let Ok(()) = db::delete_folder(&mut conn, *id) {
                             if let Ok(mut folders) = folders_writer.write() {
-                                folders.retain(|f| f.id != id);
+                                folders.retain(|f| f.id != *id);
                             }
                         }
                     }
                     Messge::RenameFolder(name, id) => {
-                        if db::rename_folder(&mut conn, name.clone(), id)
+                        if db::rename_folder(&mut conn, name.clone(), *id)
                             .ok()
                             .filter(|n| *n == 1)
                             .is_some()
                         {
                             if let Ok(mut folders) = folders_writer.write() {
                                 if let Some(folder) = folders.iter_mut().find_map(|folder| {
-                                    if folder.id == id {
+                                    if folder.id == *id {
                                         Some(folder)
                                     } else {
                                         None
                                     }
                                 }) {
-                                    folder.name = name;
+                                    folder.name = name.to_string();
+                                }
+                            }
+                        }
+                    }
+                    Messge::DeleteSource(_, id, folder_id) => {
+                        if let Ok(()) = db::delete_source(&mut conn, *id) {
+                            if let Ok(mut folders) = folders_writer.write() {
+                                if let Some(folder) = folders.iter_mut().find_map(|folder| {
+                                    if folder.id == *folder_id {
+                                        Some(folder)
+                                    } else {
+                                        None
+                                    }
+                                }) {
+                                    if let Some(sources) = folder.sources.as_mut() {
+                                        sources.retain(|s| s.id != *id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Messge::EditSource(url, name, id, folder_id, prev_folder_id) => {
+                        if let Ok(()) = db::update_source(
+                            &mut conn,
+                            url.to_string(),
+                            name.to_string(),
+                            *id,
+                            *folder_id,
+                        ) {
+                            if let Ok(mut folders) = folders_writer.write() {
+                                // remove
+                                if let Some(pfid) = prev_folder_id {
+                                    // remove
+                                    if let Some(folder) = folders.iter_mut().find_map(|folder| {
+                                        if folder.id == *pfid {
+                                            Some(folder)
+                                        } else {
+                                            None
+                                        }
+                                    }) {
+                                        if let Some(sources) = folder.sources.as_mut() {
+                                            sources.retain(|s| s.id != *id);
+                                        }
+                                    }
+                                    // push
+                                    if let Some(folder) = folders.iter_mut().find_map(|folder| {
+                                        if folder.id == *folder_id {
+                                            Some(folder)
+                                        } else {
+                                            None
+                                        }
+                                    }) {
+                                        if let Some(sources) = folder.sources.as_mut() {
+                                            sources.push(models::Source {
+                                                id: *id,
+                                                name: name.to_string(),
+                                                url: url.to_string(),
+                                            });
+                                        }
+                                    }
+                                } else {
+                                    // update
+                                    if let Some(folder) = folders.iter_mut().find_map(|folder| {
+                                        if folder.id == *folder_id {
+                                            Some(folder)
+                                        } else {
+                                            None
+                                        }
+                                    }) {
+                                        if let Some(sources) = folder.sources.as_mut() {
+                                            if let Some(source) =
+                                                sources.iter_mut().find_map(|source| {
+                                                    if source.id == *id {
+                                                        Some(source)
+                                                    } else {
+                                                        None
+                                                    }
+                                                })
+                                            {
+                                                source.name = name.to_string();
+                                                source.url = url.to_string();
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -125,28 +244,31 @@ fn main() -> Result<()> {
                     _ => {}
                 }
             }
-        }
+
+            Ok::<(), Error>(())
+        });
         Ok::<(), Error>(())
     });
 
-    let store = Store::new(tx, folders);
-    let options = eframe::NativeOptions {
-        drag_and_drop_support: true,
-        fullsize_content: true,
+    rt.block_on(async {
+        let store = Store::new(tx, folders);
+        let options = eframe::NativeOptions {
+            drag_and_drop_support: true,
+            fullsize_content: true,
 
-        initial_window_size: Some(egui::vec2(1280.0, 1024.0)),
+            initial_window_size: Some(egui::vec2(1280.0, 1024.0)),
 
-        #[cfg(feature = "wgpu")]
-        renderer: eframe::Renderer::Wgpu,
+            #[cfg(feature = "wgpu")]
+            renderer: eframe::Renderer::Wgpu,
 
-        ..Default::default()
-    };
-    eframe::run_native(
-        "PinDash News",
-        options,
-        Box::new(|_cc| Box::new(App::new(store))),
-    );
-
+            ..Default::default()
+        };
+        eframe::run_native(
+            "PinDash News",
+            options,
+            Box::new(|_cc| Box::new(App::new(store))),
+        );
+    });
     Ok(())
 }
 
@@ -192,12 +314,23 @@ impl App {
             )
             .unwrap(),
         );
+        icons.insert(
+            "link",
+            RetainedImage::from_svg_bytes_with_size(
+                "link",
+                include_bytes!("../icons/link.svg"),
+                egui_extras::image::FitTo::Original,
+            )
+            .unwrap(),
+        );
 
         let windows: Vec<Box<dyn windows::Window>> = vec![
             Box::new(windows::WindowAddFeed::default()),
             Box::new(windows::WindowAddFolder::default()),
             Box::new(windows::WindowDeleteFolder::default()),
             Box::new(windows::WindowRenameFolder::default()),
+            Box::new(windows::WindowDeleteSource::default()),
+            Box::new(windows::WindowEditSource::default()),
         ];
         let open = HashMap::default();
 
@@ -288,6 +421,8 @@ impl eframe::App for App {
                     .show_viewport(ui, |ui, rect| {
                         ui.set_width(rect.width());
                         ui.set_height(rect.height());
+                        let folder_img = self.icons.get("folder").unwrap();
+                        let link_img = self.icons.get("link").unwrap();
                         let open = &mut self.open;
                         let source_id = &mut self.source_id;
                         let Store { folders, sender } = &self.store;
@@ -305,6 +440,14 @@ impl eframe::App for App {
                                 )
                                 .show_header(ui, |ui| {
                                     ui.label(folder.name.to_string()).context_menu(|ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.image(
+                                                folder_img.texture_id(ctx),
+                                                folder_img.size_vec2() * 0.5,
+                                            );
+                                            ui.label(folder.name.to_string());
+                                        });
+                                        ui.separator();
                                         ui.button("Mark as read");
                                         ui.separator();
                                         if ui.button("Rename").clicked() {
@@ -341,18 +484,52 @@ impl eframe::App for App {
                                         |ui| {
                                             if let Some(sources) = &folder.sources {
                                                 sources.iter().for_each(|source| {
-                                                    // ui.toggle_value(
-                                                    //     &mut false,
-                                                    //     source.name.to_string(),
-                                                    // );
-                                                    // ui.on_hover_text(source.name.to_string());
-
                                                     if ui
                                                         .selectable_value(
                                                             source_id,
                                                             source.id,
                                                             source.name.to_string(),
                                                         )
+                                                        .context_menu(|ui| {
+                                                            ui.horizontal(|ui| {
+                                                                ui.image(
+                                                                    link_img.texture_id(ctx),
+                                                                    link_img.size_vec2() * 0.5,
+                                                                );
+                                                                ui.label(source.name.to_string());
+                                                            });
+                                                            ui.separator();
+                                                            ui.button("Mark as read");
+                                                            ui.separator();
+                                                            if ui.button("Edit").clicked() {
+                                                                ui.close_menu();
+                                                                set_open(
+                                                                    open,
+                                                                    windows::WindowEditSource::NAME,
+                                                                    true,
+                                                                    Some(Messge::EditSource(
+                                                                        source.url.to_string(),
+                                                                        source.name.to_string(),
+                                                                        source.id,
+                                                                        folder.id,
+                                                                        None
+                                                                    )),
+                                                                );
+                                                            }
+                                                            if ui.button("Delete").clicked() {
+                                                                ui.close_menu();
+                                                                set_open(
+                                                                    open,
+                                                                    windows::WindowDeleteSource::NAME,
+                                                                    true,
+                                                                    Some(Messge::DeleteSource(
+                                                                        source.name.to_string(),
+                                                                        source.id,
+                                                                        folder.id
+                                                                    )),
+                                                                );
+                                                            }
+                                                        })
                                                         .changed()
                                                     {
                                                         *source_id = source.id;

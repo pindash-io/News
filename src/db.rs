@@ -9,56 +9,56 @@ pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Re
     let folders = conn
         .prepare_cached(
             r#"
-        WITH f AS (
+            WITH f AS (
+                SELECT
+                    id,
+                    name
+                FROM
+                    folders
+            ),
+            fs AS (
+                SELECT
+                    f,
+                    s
+                FROM
+                    folder_sources
+            ),
+            s AS (
+                SELECT
+                    s.id,
+                    s.name,
+                    s.url,
+                    fs.f AS fid
+                FROM
+                    sources AS s
+                INNER JOIN
+                    fs
+                ON
+                    fs.s = s.id
+            )
             SELECT
-                id,
-                name
+                f.id,
+                f.name,
+                (CASE count(s.fid)
+                WHEN 0 THEN NULL
+                ELSE json_group_array(json_object(
+                    'id',
+                    s.id,
+                    'name',
+                    s.name,
+                    'url',
+                    s.url
+                ))
+            END) AS folders 
             FROM
-                folders
-        ),
-        fs AS (
-            SELECT
-                f,
+                f
+            LEFT JOIN
                 s
-            FROM
-                folder_sources
-        ),
-        s AS (
-            SELECT
-                s.id,
-                s.name,
-                s.url,
-                fs.f AS fid
-            FROM
-                sources AS s
-            INNER JOIN
-                fs
             ON
-                fs.s = s.id
-        )
-        SELECT
-            f.id,
-            f.name,
-            (CASE count(s.fid)
-            WHEN 0 THEN NULL
-            ELSE json_group_array(json_object(
-                'id',
-                s.id,
-                'name',
-                s.name,
-                'url',
-                s.url
-            ))
-        END) AS folders 
-        FROM
-            f
-        LEFT JOIN
-            s
-        ON
-            s.fid = f.id 
-        GROUP BY
-            f.id
-        "#,
+                s.fid = f.id 
+            GROUP BY
+                f.id
+            "#,
         )?
         .query_map([], |row| {
             let id = row.get(0)?;
@@ -186,4 +186,57 @@ pub fn rename_folder(
         rusqlite::params![name.clone(), id],
     )?;
     Ok(size)
+}
+
+pub fn delete_source(
+    mut conn: &mut PooledConnection<SqliteConnectionManager>,
+    id: u64,
+) -> Result<()> {
+    let t = conn.transaction()?;
+    t.execute(
+        r#"
+        DELETE FROM
+            sources
+        WHERE
+            id = ?1
+        "#,
+        [id],
+    )?;
+    t.commit()?;
+    Ok(())
+}
+
+pub fn update_source(
+    mut conn: &mut PooledConnection<SqliteConnectionManager>,
+    url: String,
+    name: String,
+    id: u64,
+    folder_id: u64,
+) -> Result<()> {
+    let t = conn.transaction()?;
+    t.execute(
+        r#"
+        UPDATE
+            folder_sources
+        SET
+            f = ?1
+        WHERE
+            s = ?2
+        "#,
+        [folder_id, id],
+    )?;
+    t.execute(
+        r#"
+        UPDATE
+            sources
+        SET
+            name = ?1,
+            url = ?2
+        WHERE
+            id = ?3
+        "#,
+        rusqlite::params![url, name, id],
+    )?;
+    t.commit()?;
+    Ok(())
 }

@@ -1,6 +1,7 @@
 mod components;
 
-use std::sync::{mpsc::Sender, Arc, RwLock};
+use std::sync::{Arc, RwLock};
+use tokio::sync::watch::Sender;
 
 pub use components::*;
 pub mod db;
@@ -9,6 +10,7 @@ pub mod windows;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Messge {
+    Normal,
     /// (url, name, folder id)
     NewSource(String, String, u64),
     /// (name)
@@ -19,9 +21,13 @@ pub enum Messge {
     RenameFolder(String, u64),
     ///
     RefreshFolders,
+    /// (name, id, folder id)
+    DeleteSource(String, u64, u64),
+    /// (url, name, id, folder id, prev folder id)
+    EditSource(String, String, u64, u64, Option<u64>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Store {
     pub sender: Sender<Messge>,
     pub folders: Arc<RwLock<Vec<models::Folder>>>,
