@@ -4,5 +4,14 @@ CREATE TABLE IF NOT EXISTS sources (
   name TEXT,
   description TEXT,
   image_url TEXT,
-  created INTEGER NOT NULL
+  created_at INTEGER NOT NULL DEFAULT (
+    CAST(
+      ROUND((julianday('now') - 2440587.5) * 86400000) As INTEGER
+    )
+  ),
+  updated_at INTEGER NOT NULL DEFAULT (
+    CAST(
+      ROUND((julianday('now') - 2440587.5) * 86400000) As INTEGER
+    )
+  )
 );

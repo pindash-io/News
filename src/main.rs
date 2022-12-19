@@ -1,14 +1,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::ops::Div;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::{
+    mpsc::{self, Sender},
+    Arc, RwLock,
+};
+use std::thread;
 use std::vec;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use eframe::egui;
 use eframe::egui::style::Margin;
 use eframe::egui::Button;
@@ -18,6 +22,7 @@ use eframe::epaint::ColorImage;
 use eframe::epaint::Rect;
 use eframe::epaint::Shape;
 use egui_extras::RetainedImage;
+use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, OpenFlags};
 use rusqlite_migration::{Migrations, M};
@@ -39,9 +44,9 @@ fn main() -> Result<()> {
     let db = SqliteConnectionManager::file(config_dir.join("news.db")).with_init(|c| {
         c.execute_batch(
             r#"
-        PRAGMA journal_mode = wal;
-        PRAGMA foreign_keys = on;
-        PRAGMA synchronous = normal;
+        PRAGMA synchronous = NORMAL;
+        PRAGMA journal_mode = WAL;
+        PRAGMA foreign_keys = ON;
         "#,
         )?;
         Ok(())
@@ -52,15 +57,138 @@ fn main() -> Result<()> {
     let pool = r2d2::Pool::new(db)?;
 
     // 1️⃣ Define migrations
-    let migrations = Migrations::new(vec![M::up(include_str!("../migrations/0-sources.sql"))]);
+    let migrations = Migrations::new(vec![
+        M::up(include_str!("../migrations/0-sources.sql")),
+        M::up(include_str!("../migrations/1-folders.sql")),
+        M::up(include_str!("../migrations/2-default-folder.sql")),
+    ]);
 
     dbg!(&migrations);
 
     let mut conn = pool.get()?;
-
     // 2️⃣ Update the database schema, atomically
-    dbg!(migrations.to_latest(&mut conn)).unwrap();
+    dbg!(migrations.to_latest(&mut conn)?);
 
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT
+            id,
+            name
+        FROM
+            folders
+        ORDER BY id ASC
+    "#,
+    )?;
+
+    let folders = stmt
+        .query_map([], |row| {
+            Ok(models::Folder {
+                id: row.get(0)?,
+                name: row.get(1)?,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect::<Vec<_>>())?;
+
+    tracing::info!("{:?}", folders);
+    // drop(conn);
+
+    let folders = Arc::new(RwLock::new(folders));
+    let (tx, rx) = mpsc::channel::<Messge>();
+
+    let folders_writer = folders.clone();
+    thread::spawn(move || {
+        let mut conn = pool.get()?;
+        loop {
+            for m in rx.iter() {
+                tracing::info!("{:?}", m);
+                match m {
+                    Messge::NewSource(url, name, folder) => {}
+                    Messge::NewFolder(name) => {
+                        if let Ok(folder) = conn.query_row(
+                            r#"
+                            INSERT INTO folders(name)
+                            VALUES(?1)
+                            RETURNING
+                                id,
+                                name 
+                            "#,
+                            [name],
+                            |row| {
+                                Ok(models::Folder {
+                                    id: row.get(0)?,
+                                    name: row.get(1)?,
+                                })
+                            },
+                        ) {
+                            if let Ok(mut folders) = folders_writer.write() {
+                                folders.push(folder);
+                            }
+                        }
+                    }
+                    Messge::DeleteFolder(name, id) => {
+                        let mut t = conn.transaction()?;
+                        t.execute(
+                            r#"
+                            UPDATE
+                                folder_sources
+                            SET
+                                f = 1
+                            WHERE
+                                f = ?1
+                        "#,
+                            [id],
+                        )?;
+                        t.execute(
+                            r#"
+                            DELETE FROM
+                                folders
+                            WHERE
+                                id = ?1
+                        "#,
+                            [id],
+                        )?;
+                        t.commit()?;
+                        if let Ok(mut folders) = folders_writer.write() {
+                            folders.retain(|f| f.id != id);
+                        }
+                    }
+                    Messge::RenameFolder(name, id) => {
+                        if conn
+                            .execute(
+                                r#"
+                        UPDATE
+                            folders
+                        SET
+                            name = ?1
+                        WHERE
+                            id = ?2
+                        "#,
+                                rusqlite::params![name.clone(), id],
+                            )
+                            .ok()
+                            .filter(|n| *n == 1)
+                            .is_some()
+                        {
+                            if let Ok(mut folders) = folders_writer.write() {
+                                if let Some(folder) = folders.iter_mut().find_map(|folder| {
+                                    if folder.id == id {
+                                        Some(folder)
+                                    } else {
+                                        None
+                                    }
+                                }) {
+                                    folder.name = name;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok::<(), Error>(())
+    });
+
+    let store = Store::new(tx, folders);
     let options = eframe::NativeOptions {
         drag_and_drop_support: true,
         fullsize_content: true,
@@ -75,7 +203,7 @@ fn main() -> Result<()> {
     eframe::run_native(
         "PinDash News",
         options,
-        Box::new(|_cc| Box::new(App::default())),
+        Box::new(|_cc| Box::new(App::new(store))),
     );
 
     Ok(())
@@ -84,12 +212,14 @@ fn main() -> Result<()> {
 struct App {
     icons: HashMap<&'static str, RetainedImage>,
 
-    windows: Vec<Box<dyn Window>>,
-    open: BTreeSet<String>,
+    windows: Vec<Box<dyn windows::Window>>,
+    open: HashMap<&'static str, Option<Messge>>,
+
+    store: Store,
 }
 
-impl Default for App {
-    fn default() -> Self {
+impl App {
+    pub fn new(store: Store) -> Self {
         let mut icons = HashMap::<&'static str, RetainedImage>::new();
 
         icons.insert(
@@ -120,32 +250,35 @@ impl Default for App {
             .unwrap(),
         );
 
-        let windows: Vec<Box<dyn Window>> = vec![
-            Box::new(WindowAddFeed::default()),
-            Box::new(WindowAddFolder::default()),
+        let windows: Vec<Box<dyn windows::Window>> = vec![
+            Box::new(windows::WindowAddFeed::default()),
+            Box::new(windows::WindowAddFolder::default()),
+            Box::new(windows::WindowDeleteFolder::default()),
+            Box::new(windows::WindowRenameFolder::default()),
         ];
-        let open = BTreeSet::default();
+        let open = HashMap::default();
 
         Self {
+            store,
             icons,
             windows,
             open,
         }
     }
-}
 
-impl App {
     pub fn windows(&mut self, ctx: &egui::Context, size: egui::Vec2) {
         let Self { windows, open, .. } = self;
         for window in windows {
-            let mut is_open = open.contains(window.name());
+            let mut is_open = open.contains_key(window.name());
+            let mut data = None;
             if is_open {
-                window.show(ctx, &mut is_open, size);
+                data = open.get(window.name()).cloned().unwrap();
+                window.show(&self.store, ctx, &mut is_open, size, data.clone());
             }
             if window.is_closed() {
                 is_open = false;
             }
-            set_open(open, window.name(), is_open);
+            set_open(open, window.name(), is_open, None);
         }
     }
 }
@@ -160,7 +293,6 @@ impl eframe::App for App {
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.add_space(70.);
-
                     let img = self.icons.get("plus").unwrap();
                     ui.menu_button_image(img.texture_id(ctx), img.size_vec2() * 0.5, "Add", |ui| {
                         let img = self.icons.get("rss").unwrap();
@@ -172,9 +304,8 @@ impl eframe::App for App {
                             ))
                             .clicked()
                         {
-                            dbg!("feed");
-                            set_open(&mut self.open, WindowAddFeed::NAME, true);
-                            ui.close_menu()
+                            ui.close_menu();
+                            set_open(&mut self.open, windows::WindowAddFeed::NAME, true, None);
                         }
                         let img = self.icons.get("folder").unwrap();
                         if ui
@@ -185,9 +316,8 @@ impl eframe::App for App {
                             ))
                             .clicked()
                         {
-                            dbg!("folder");
-                            set_open(&mut self.open, WindowAddFolder::NAME, true);
-                            ui.close_menu()
+                            ui.close_menu();
+                            set_open(&mut self.open, windows::WindowAddFolder::NAME, true, None);
                         }
                     });
                 });
@@ -204,28 +334,82 @@ impl eframe::App for App {
                     ui.heading("Feeds");
                 });
                 ui.separator();
+
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false; 2])
+                    .show_viewport(ui, |ui, rect| {
+                        ui.set_width(rect.width());
+                        ui.set_height(rect.height());
+                        let open = &mut self.open;
+                        let Store { folders, sender } = &self.store;
+                        if let Ok(folders) = folders.try_read() {
+                            folders.iter().for_each(move |folder| {
+                                // ui.collapsing(folder.name.to_string(), |ui| {
+                                //     ui.group(|ui| {});
+                                // });
+
+                                let id = ui.make_persistent_id(folder.name.to_string());
+                                egui::collapsing_header::CollapsingState::load_with_default_open(
+                                    ui.ctx(),
+                                    id,
+                                    false,
+                                )
+                                .show_header(ui, |ui| {
+                                    ui.label(folder.name.to_string()).context_menu(|ui| {
+                                        ui.button("Mark as read");
+                                        ui.separator();
+                                        if ui.button("Rename").clicked() {
+                                            ui.close_menu();
+                                            set_open(
+                                                open,
+                                                windows::WindowRenameFolder::NAME,
+                                                true,
+                                                Some(Messge::RenameFolder(
+                                                    folder.name.to_string(),
+                                                    folder.id,
+                                                )),
+                                            );
+                                        }
+                                        if folder.id > 1 {
+                                            if ui.button("Delete").clicked() {
+                                                ui.close_menu();
+                                                set_open(
+                                                    open,
+                                                    windows::WindowDeleteFolder::NAME,
+                                                    true,
+                                                    Some(Messge::DeleteFolder(
+                                                        folder.name.to_string(),
+                                                        folder.id,
+                                                    )),
+                                                );
+                                            }
+                                        }
+                                    });
+                                })
+                                .body(|ui| {});
+                            });
+                        }
+                    });
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Central Panel");
-            ui.horizontal(|ui| {
-                // let name_label = ui.label("Your name: ");
-                // ui.text_edit_singleline(&mut self.name)
-                //     .labelled_by(name_label.id);
-            });
-            // ui.add(egui::slider::new(&mut self.age, 0..=120).text("age"));
-            // if ui.button("click each year").clicked() {
-            //     self.age += 1;
-            // }
+            ui.horizontal(|ui| {});
         });
     }
 }
 
-fn set_open(open: &mut BTreeSet<String>, key: &'static str, is_open: bool) {
+fn set_open(
+    open: &mut HashMap<&'static str, Option<Messge>>,
+    key: &'static str,
+    is_open: bool,
+    data: Option<Messge>,
+) {
     if is_open {
-        if !open.contains(key) {
-            open.insert(key.to_owned());
+        if !open.is_empty() {
+            open.clear();
         }
+        open.insert(key, data);
     } else {
         open.remove(key);
     }
