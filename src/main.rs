@@ -157,6 +157,8 @@ struct App {
     open: HashMap<&'static str, Option<Messge>>,
 
     store: Store,
+
+    source_id: u64,
 }
 
 impl App {
@@ -204,6 +206,7 @@ impl App {
             icons,
             windows,
             open,
+            source_id: 0,
         }
     }
 
@@ -286,6 +289,7 @@ impl eframe::App for App {
                         ui.set_width(rect.width());
                         ui.set_height(rect.height());
                         let open = &mut self.open;
+                        let source_id = &mut self.source_id;
                         let Store { folders, sender } = &self.store;
                         if let Ok(folders) = folders.try_read() {
                             folders.iter().for_each(move |folder| {
@@ -337,11 +341,22 @@ impl eframe::App for App {
                                         |ui| {
                                             if let Some(sources) = &folder.sources {
                                                 sources.iter().for_each(|source| {
-                                                    ui.toggle_value(
-                                                        &mut true,
-                                                        source.name.to_string(),
-                                                    );
+                                                    // ui.toggle_value(
+                                                    //     &mut false,
+                                                    //     source.name.to_string(),
+                                                    // );
                                                     // ui.on_hover_text(source.name.to_string());
+
+                                                    if ui
+                                                        .selectable_value(
+                                                            source_id,
+                                                            source.id,
+                                                            source.name.to_string(),
+                                                        )
+                                                        .changed()
+                                                    {
+                                                        *source_id = source.id;
+                                                    }
                                                 });
                                             }
                                         },
