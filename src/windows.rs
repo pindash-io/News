@@ -4,7 +4,7 @@ use std::ops::{Div, Sub};
 use eframe::{egui, emath};
 
 use crate::models::Source;
-use crate::{models, Messge, Store};
+use crate::{models, Message, Store};
 
 pub trait View {
     fn ui(&mut self, ui: &mut egui::Ui, store: &Store);
@@ -22,7 +22,7 @@ pub trait Window {
         ctx: &egui::Context,
         open: &mut bool,
         size: egui::Vec2,
-        data: Option<Messge>,
+        data: Option<Message>,
     );
 
     /// status
@@ -55,10 +55,10 @@ impl Window for WindowAddFeed {
         ctx: &egui::Context,
         open: &mut bool,
         size: egui::Vec2,
-        mut data: Option<Messge>,
+        mut data: Option<Message>,
     ) {
         // must
-        if let Some(Messge::RefreshFolders) = data.take() {
+        if let Some(Message::RefreshFolders) = data.take() {
             if let Ok(reader) = store.folders.read() {
                 self.folder_id = reader[0].id;
                 self.folder_name = reader[0].name.to_string();
@@ -128,7 +128,7 @@ impl View for WindowAddFeed {
                         if let Err(e) =
                             store
                                 .sender
-                                .send(Messge::NewSource(url, name, self.folder_id))
+                                .send(Message::NewSource(url, name, self.folder_id))
                         {
                             tracing::error!("{e}");
                         } else {
@@ -163,7 +163,7 @@ impl Window for WindowAddFolder {
         ctx: &egui::Context,
         open: &mut bool,
         size: egui::Vec2,
-        data: Option<Messge>,
+        data: Option<Message>,
     ) {
         self.closed = false;
         egui::Window::new(self.name())
@@ -196,7 +196,7 @@ impl View for WindowAddFolder {
                         if name.is_empty() {
                             return;
                         }
-                        if let Err(e) = store.sender.send(Messge::NewFolder(name)) {
+                        if let Err(e) = store.sender.send(Message::NewFolder(name)) {
                             tracing::error!("{e}");
                         } else {
                             self.closed = true;
@@ -230,9 +230,9 @@ impl Window for WindowDeleteFolder {
         ctx: &egui::Context,
         open: &mut bool,
         size: egui::Vec2,
-        data: Option<Messge>,
+        data: Option<Message>,
     ) {
-        if let Some(Messge::DeleteFolder(name, id)) = data {
+        if let Some(Message::DeleteFolder(name, id)) = data {
             self.folder = models::Folder {
                 id,
                 name,
@@ -266,7 +266,7 @@ impl View for WindowDeleteFolder {
             move |ui| {
                 ui.horizontal_wrapped(move |ui| {
                     if ui.button("Ok").clicked() {
-                        if let Err(e) = store.sender.send(Messge::DeleteFolder(
+                        if let Err(e) = store.sender.send(Message::DeleteFolder(
                             self.folder.name.to_string(),
                             self.folder.id,
                         )) {
@@ -304,9 +304,9 @@ impl Window for WindowRenameFolder {
         ctx: &egui::Context,
         open: &mut bool,
         size: egui::Vec2,
-        mut data: Option<Messge>,
+        mut data: Option<Message>,
     ) {
-        if let Some(Messge::RenameFolder(name, id)) = data.take() {
+        if let Some(Message::RenameFolder(name, id)) = data.take() {
             self.name = name.clone();
             self.folder = models::Folder {
                 id,
@@ -351,7 +351,7 @@ impl View for WindowRenameFolder {
                         }
                         if let Err(e) = store
                             .sender
-                            .send(Messge::RenameFolder(name, self.folder.id))
+                            .send(Message::RenameFolder(name, self.folder.id))
                         {
                             tracing::error!("{e}");
                         } else {
@@ -387,9 +387,9 @@ impl Window for WindowDeleteSource {
         ctx: &egui::Context,
         open: &mut bool,
         size: egui::Vec2,
-        data: Option<Messge>,
+        data: Option<Message>,
     ) {
-        if let Some(Messge::DeleteSource(name, id, folder_id)) = data {
+        if let Some(Message::DeleteSource(name, id, folder_id)) = data {
             self.folder_id = folder_id;
             self.source = models::Source {
                 id,
@@ -424,7 +424,7 @@ impl View for WindowDeleteSource {
             move |ui| {
                 ui.horizontal_wrapped(move |ui| {
                     if ui.button("Ok").clicked() {
-                        if let Err(e) = store.sender.send(Messge::DeleteSource(
+                        if let Err(e) = store.sender.send(Message::DeleteSource(
                             self.source.name.to_string(),
                             self.source.id,
                             self.folder_id,
@@ -465,10 +465,10 @@ impl Window for WindowEditSource {
         ctx: &egui::Context,
         open: &mut bool,
         size: egui::Vec2,
-        mut data: Option<Messge>,
+        mut data: Option<Message>,
     ) {
         // must
-        if let Some(Messge::EditSource(url, name, id, folder_id, _)) = data.take() {
+        if let Some(Message::EditSource(url, name, id, folder_id, _)) = data.take() {
             self.source = models::Source { id, name, url };
             if let Ok(reader) = store.folders.read() {
                 self.folder = reader
@@ -541,7 +541,7 @@ impl View for WindowEditSource {
                             return;
                         }
 
-                        if let Err(e) = store.sender.send(Messge::EditSource(
+                        if let Err(e) = store.sender.send(Message::EditSource(
                             url,
                             name,
                             self.source.id,

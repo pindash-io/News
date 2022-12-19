@@ -1,5 +1,6 @@
 mod components;
 
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::sync::watch::Sender;
 
@@ -9,7 +10,7 @@ pub mod models;
 pub mod windows;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Messge {
+pub enum Message {
     Normal,
     /// (url, name, folder id)
     NewSource(String, String, u64),
@@ -25,17 +26,19 @@ pub enum Messge {
     DeleteSource(String, u64, u64),
     /// (url, name, id, folder id, prev folder id)
     EditSource(String, String, u64, u64, Option<u64>),
+    /// (url, id)
+    FetchFeedsBySource(String, u64),
 }
 
 #[derive(Debug)]
 pub struct Store {
-    pub sender: Sender<Messge>,
+    pub sender: Sender<Message>,
     pub folders: Arc<RwLock<Vec<models::Folder>>>,
-    pub feeds: Arc<RwLock<Vec<models::Feed>>>,
+    pub feeds: Arc<RwLock<HashMap<u64, Vec<models::Feed>>>>,
 }
 
 impl Store {
-    pub fn new(sender: Sender<Messge>, folders: Arc<RwLock<Vec<models::Folder>>>) -> Self {
+    pub fn new(sender: Sender<Message>, folders: Arc<RwLock<Vec<models::Folder>>>) -> Self {
         Self {
             sender,
             folders,

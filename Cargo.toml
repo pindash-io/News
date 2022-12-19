@@ -18,8 +18,10 @@ wgpu = []
 
 [dependencies]
 anyhow = "1.0.67"
-eframe = { path = "../../egui/crates/eframe", features = ["wgpu"] }
-egui_extras = { path = "../../egui/crates/egui_extras", features = [
+eframe = { git = "https://github.com/fundon/egui.git", branch = "menu_button_image", features = [
+  "wgpu",
+] }
+egui_extras = { git = "https://github.com/fundon/egui.git", branch = "menu_button_image", features = [
   "svg",
   "image",
 ] }

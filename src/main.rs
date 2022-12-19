@@ -85,7 +85,7 @@ fn main() -> Result<()> {
         Ok::<(), Error>(())
     });
 
-    let (tx, mut rx) = tokio::sync::watch::channel::<Messge>(Messge::Normal);
+    let (tx, mut rx) = tokio::sync::watch::channel::<Message>(Message::Normal);
 
     thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -99,7 +99,7 @@ fn main() -> Result<()> {
                 let msg = rx.borrow();
                 tracing::info!("{:?}", &msg);
                 match msg.deref() {
-                    Messge::NewSource(url, name, folder_id) => {
+                    Message::NewSource(url, name, folder_id) => {
                         if let Ok(id) = db::create_source(
                             &mut conn,
                             url.to_string(),
@@ -125,21 +125,21 @@ fn main() -> Result<()> {
                             }
                         }
                     }
-                    Messge::NewFolder(name) => {
+                    Message::NewFolder(name) => {
                         if let Ok(folder) = db::create_folder(&mut conn, name.to_string()) {
                             if let Ok(mut folders) = folders_writer.write() {
                                 folders.push(folder);
                             }
                         }
                     }
-                    Messge::DeleteFolder(_, id) => {
+                    Message::DeleteFolder(_, id) => {
                         if let Ok(()) = db::delete_folder(&mut conn, *id) {
                             if let Ok(mut folders) = folders_writer.write() {
                                 folders.retain(|f| f.id != *id);
                             }
                         }
                     }
-                    Messge::RenameFolder(name, id) => {
+                    Message::RenameFolder(name, id) => {
                         if db::rename_folder(&mut conn, name.clone(), *id)
                             .ok()
                             .filter(|n| *n == 1)
@@ -158,7 +158,7 @@ fn main() -> Result<()> {
                             }
                         }
                     }
-                    Messge::DeleteSource(_, id, folder_id) => {
+                    Message::DeleteSource(_, id, folder_id) => {
                         if let Ok(()) = db::delete_source(&mut conn, *id) {
                             if let Ok(mut folders) = folders_writer.write() {
                                 if let Some(folder) = folders.iter_mut().find_map(|folder| {
@@ -175,7 +175,7 @@ fn main() -> Result<()> {
                             }
                         }
                     }
-                    Messge::EditSource(url, name, id, folder_id, prev_folder_id) => {
+                    Message::EditSource(url, name, id, folder_id, prev_folder_id) => {
                         if let Ok(()) = db::update_source(
                             &mut conn,
                             url.to_string(),
@@ -278,7 +278,7 @@ struct App {
     icons: HashMap<&'static str, RetainedImage>,
 
     windows: Vec<Box<dyn windows::Window>>,
-    open: HashMap<&'static str, Option<Messge>>,
+    open: HashMap<&'static str, Option<Message>>,
 
     store: Store,
 
@@ -387,7 +387,7 @@ impl eframe::App for App {
                                 &mut self.open,
                                 windows::WindowAddFeed::NAME,
                                 true,
-                                Some(Messge::RefreshFolders),
+                                Some(Message::RefreshFolders),
                             );
                         }
                         let img = self.icons.get("folder").unwrap();
@@ -486,7 +486,7 @@ impl eframe::App for App {
                                                 open,
                                                 windows::WindowRenameFolder::NAME,
                                                 true,
-                                                Some(Messge::RenameFolder(
+                                                Some(Message::RenameFolder(
                                                     folder.name.to_string(),
                                                     folder.id,
                                                 )),
@@ -499,7 +499,7 @@ impl eframe::App for App {
                                                     open,
                                                     windows::WindowDeleteFolder::NAME,
                                                     true,
-                                                    Some(Messge::DeleteFolder(
+                                                    Some(Message::DeleteFolder(
                                                         folder.name.to_string(),
                                                         folder.id,
                                                     )),
@@ -537,7 +537,7 @@ impl eframe::App for App {
                                                                     open,
                                                                     windows::WindowEditSource::NAME,
                                                                     true,
-                                                                    Some(Messge::EditSource(
+                                                                    Some(Message::EditSource(
                                                                         source.url.to_string(),
                                                                         source.name.to_string(),
                                                                         source.id,
@@ -552,7 +552,7 @@ impl eframe::App for App {
                                                                     open,
                                                                     windows::WindowDeleteSource::NAME,
                                                                     true,
-                                                                    Some(Messge::DeleteSource(
+                                                                    Some(Message::DeleteSource(
                                                                         source.name.to_string(),
                                                                         source.id,
                                                                         folder.id
@@ -563,6 +563,10 @@ impl eframe::App for App {
                                                         .changed()
                                                     {
                                                         *current_source = source.clone();
+                                                        sender.send(Message::FetchFeedsBySource (
+                                                            source.url.to_string(),
+                                                            source.id,
+                                                        ));
                                                     }
                                                 });
                                             }
@@ -603,10 +607,10 @@ impl eframe::App for App {
 }
 
 fn set_open(
-    open: &mut HashMap<&'static str, Option<Messge>>,
+    open: &mut HashMap<&'static str, Option<Message>>,
     key: &'static str,
     is_open: bool,
-    data: Option<Messge>,
+    data: Option<Message>,
 ) {
     if is_open {
         if !open.is_empty() {
