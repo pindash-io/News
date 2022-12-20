@@ -1,29 +1,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::env;
-use std::fs;
-use std::ops::Deref;
-use std::ops::Div;
-use std::path::Path;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::{
-    mpsc::{self, Sender},
-    Arc, RwLock,
+use std::{
+    env, fs,
+    ops::Deref,
+    path::PathBuf,
+    str::FromStr,
+    sync::{
+        mpsc::{self, Sender},
+        Arc, RwLock,
+    },
+    thread,
 };
-use std::thread;
-use std::vec;
 
 use anyhow::{Error, Result};
 use eframe::egui;
-use eframe::egui::style::Margin;
-use eframe::egui::Button;
-use eframe::egui::ImageButton;
-use eframe::egui::Sense;
-use eframe::epaint::ColorImage;
-use eframe::epaint::Rect;
-use eframe::epaint::Shape;
-use egui_extras::RetainedImage;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, OpenFlags};
@@ -49,7 +39,7 @@ fn main() -> Result<()> {
                 PRAGMA synchronous = NORMAL;
                 PRAGMA journal_mode = WAL;
                 PRAGMA foreign_keys = ON;
-                "#,
+            "#,
         )?;
         Ok(())
     });
@@ -263,6 +253,8 @@ fn main() -> Result<()> {
 
             Ok::<(), Error>(())
         });
+
+        drop(rt);
         Ok::<(), Error>(())
     });
 
@@ -285,5 +277,9 @@ fn main() -> Result<()> {
             Box::new(|_cc| Box::new(ui::App::new(store))),
         );
     });
+
+    tracing::info!("app exit!");
+
+    drop(rt);
     Ok(())
 }

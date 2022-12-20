@@ -121,7 +121,7 @@ impl eframe::App for App {
                 ui.horizontal_centered(|ui| {
                     ui.add_space(70.);
                     let img = self.icons.get("plus").unwrap();
-                    ui.menu_button_image(img.texture_id(ctx), img.size_vec2() * 0.5, "Add", |ui| {
+                    ui.menu_image_button(img.texture_id(ctx), img.size_vec2() * 0.5, |ui| {
                         let img = self.icons.get("rss").unwrap();
                         if ui
                             .add(egui::Button::image_and_text(
