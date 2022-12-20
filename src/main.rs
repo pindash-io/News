@@ -72,6 +72,7 @@ fn main() -> Result<()> {
             fd.extend_from_slice(&folders);
         }
 
+        drop(conn);
         Ok::<(), Error>(())
     });
 
@@ -80,6 +81,7 @@ fn main() -> Result<()> {
     thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
+            .thread_name("pindash news")
             .build()?;
 
         rt.block_on(async move {
