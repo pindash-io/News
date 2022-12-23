@@ -342,14 +342,22 @@ impl eframe::App for App {
 
             egui::SidePanel::left("Feeds SideBar")
                 .resizable(true)
-                .default_width(360.)
+                .default_width(280.)
                 .width_range(128.0..=360.)
                 .show_inside(ui, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {});
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .show_viewport(ui, |ui, rect| {
+                            ui.set_width(rect.width());
+                            ui.set_height(rect.height());
+                            ui.label("left");
+                        });
                 });
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {});
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.label("content");
+                });
             });
         });
     }
