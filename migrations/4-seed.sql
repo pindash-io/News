@@ -7,7 +7,7 @@ INSERT OR REPLACE INTO sources VALUES(2,'https://world.hey.com/this.week.in.rail
 INSERT OR REPLACE INTO sources VALUES(3,'https://fasterthanli.me/index.xml','fasterthanli.me',NULL,NULL,1671447888975,1671447888975,0);
 INSERT OR REPLACE INTO sources VALUES(4,'https://smallcultfollowing.com/babysteps/atom.xml','Baby Steps',NULL,NULL,1671449269044,1671449269044,0);
 INSERT OR REPLACE INTO sources VALUES(5,'https://hoverbear.org/rss.xml','Hoverbear',NULL,NULL,1671449826206,1671449826206,0);
-INSERT OR REPLACE INTO sources VALUES(6,'https://jason-williams.co.uk/feed/','Jason Williams',NULL,NULL,1671450381080,1671450381080,0);
+INSERT OR REPLACE INTO sources VALUES(6,'https://jason-williams.co.uk/feed.xml','Jason Williams',NULL,NULL,1671450381080,1671450381080,0);
 
 INSERT OR REPLACE INTO folder_sources VALUES(4,1);
 INSERT OR REPLACE INTO folder_sources VALUES(4,2);
