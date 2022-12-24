@@ -21,6 +21,8 @@ use rusqlite_migration::{Migrations, M};
 
 use pindash_news::*;
 
+const APP_NAME: &str = "PinDash News";
+
 fn main() -> Result<()> {
     // Log to stdout (if you run with `RUST_LOG=debug`).
     tracing_subscriber::fmt::init();
@@ -39,6 +41,7 @@ fn main() -> Result<()> {
                 PRAGMA synchronous = NORMAL;
                 PRAGMA journal_mode = WAL;
                 PRAGMA foreign_keys = ON;
+                PRAGMA busy_timeout = 5000;
             "#,
         )?;
         Ok(())
@@ -50,6 +53,7 @@ fn main() -> Result<()> {
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
+        .thread_name(APP_NAME)
         .build()?;
 
     let folders_writer = folders.clone();
@@ -60,6 +64,7 @@ fn main() -> Result<()> {
             M::up(include_str!("../migrations/2-default-folder.sql")),
             M::up(include_str!("../migrations/3-feeds.sql")),
             M::up(include_str!("../migrations/4-seed.sql")),
+            M::up(include_str!("../migrations/5-rename-date-columns.sql")),
         ]);
 
         let mut conn = pool.get()?;
@@ -81,7 +86,6 @@ fn main() -> Result<()> {
     thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
-            .thread_name("pindash news")
             .build()?;
 
         rt.block_on(async move {
@@ -239,12 +243,21 @@ fn main() -> Result<()> {
                         let url = url.to_string();
                         tokio::task::spawn(async move {
                             let content = reqwest::get(url).await?.text().await?;
-                            let feed = syndication::Feed::from_str(&content)
+                            let data = syndication::Feed::from_str(&content)
                                 .map_err(|e| anyhow::anyhow!(e))?;
 
-                            // match feed {
-                            //     syndication::Feed()
-                            // }
+                            match data {
+                                syndication::Feed::Atom(feed) => {
+                                    tracing::info!("atom {:?}", feed.authors());
+                                    tracing::info!("atom {:?}", feed.links());
+                                    tracing::info!("atom {:?}", feed.logo());
+                                    tracing::info!("atom {:?}", feed.updated());
+                                    tracing::info!("atom {:?}", feed.entries());
+                                }
+                                syndication::Feed::RSS(feed) => {
+                                    tracing::info!("rss  {:?}", feed);
+                                }
+                            }
 
                             Ok::<(), Error>(())
                         });
@@ -274,7 +287,7 @@ fn main() -> Result<()> {
             ..Default::default()
         };
         eframe::run_native(
-            "PinDash News",
+            APP_NAME,
             options,
             Box::new(|_cc| Box::new(ui::App::new(store))),
         );

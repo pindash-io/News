@@ -22,5 +22,5 @@ pub struct Feed {
     pub title: String,
     pub content: String,
     pub author: String,
-    pub created_at: u64,
+    pub created: u64,
 }
