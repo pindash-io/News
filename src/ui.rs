@@ -1,25 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use std::collections::HashMap;
-use std::env;
-use std::fs;
-use std::ops::Deref;
-use std::ops::Div;
-use std::path::Path;
-use std::path::PathBuf;
-use std::sync::{
-    mpsc::{self, Sender},
-    Arc, RwLock,
-};
 use std::vec;
 
-use anyhow::{Error, Result};
 use eframe::egui;
 use egui_extras::RetainedImage;
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::{Connection, OpenFlags};
-use rusqlite_migration::{Migrations, M};
 
 use crate::*;
 
@@ -76,12 +61,12 @@ impl App {
         );
 
         let windows: Vec<Box<dyn windows::Window>> = vec![
-            Box::new(windows::WindowAddFeed::default()),
-            Box::new(windows::WindowAddFolder::default()),
-            Box::new(windows::WindowDeleteFolder::default()),
-            Box::new(windows::WindowRenameFolder::default()),
-            Box::new(windows::WindowDeleteSource::default()),
-            Box::new(windows::WindowEditSource::default()),
+            Box::new(windows::source::AddWindow::default()),
+            Box::new(windows::source::DeleteWindow::default()),
+            Box::new(windows::source::EditWindow::default()),
+            Box::new(windows::folder::AddWindow::default()),
+            Box::new(windows::folder::DeleteWindow::default()),
+            Box::new(windows::folder::EditWindow::default()),
         ];
         let open = HashMap::default();
 
@@ -134,7 +119,7 @@ impl eframe::App for App {
                             ui.close_menu();
                             set_open(
                                 &mut self.open,
-                                windows::WindowAddFeed::NAME,
+                                windows::source::AddWindow::NAME,
                                 true,
                                 Some(Message::RefreshFolders),
                             );
@@ -149,7 +134,7 @@ impl eframe::App for App {
                             .clicked()
                         {
                             ui.close_menu();
-                            set_open(&mut self.open, windows::WindowAddFolder::NAME, true, None);
+                            set_open(&mut self.open, windows::folder::AddWindow::NAME, true, None);
                         }
                     });
                 });
@@ -233,11 +218,11 @@ impl eframe::App for App {
                                             ui.close_menu();
                                             set_open(
                                                 open,
-                                                windows::WindowRenameFolder::NAME,
+                                                windows::folder::EditWindow::NAME,
                                                 true,
-                                                Some(Message::RenameFolder(
-                                                    folder.name.to_string(),
-                                                    folder.id,
+                                                Some(Message::Folder(
+                                                    Action::Update,
+                                                    folder.clone_without_sources()
                                                 )),
                                             );
                                         }
@@ -246,11 +231,11 @@ impl eframe::App for App {
                                                 ui.close_menu();
                                                 set_open(
                                                     open,
-                                                    windows::WindowDeleteFolder::NAME,
+                                                    windows::folder::DeleteWindow::NAME,
                                                     true,
-                                                    Some(Message::DeleteFolder(
-                                                        folder.name.to_string(),
-                                                        folder.id,
+                                                    Some(Message::Folder(
+                                                        Action::Delete,
+                                                        folder.clone_without_sources()
                                                     )),
                                                 );
                                             }
@@ -284,14 +269,11 @@ impl eframe::App for App {
                                                                 ui.close_menu();
                                                                 set_open(
                                                                     open,
-                                                                    windows::WindowEditSource::NAME,
+                                                                    windows::source::EditWindow::NAME,
                                                                     true,
-                                                                    Some(Message::EditSource(
-                                                                        source.url.to_string(),
-                                                                        source.name.to_string(),
-                                                                        source.id,
-                                                                        folder.id,
-                                                                        None
+                                                                    Some(Message::Source(
+                                                                        Action::Update,
+                                                                        source.clone()
                                                                     )),
                                                                 );
                                                             }
@@ -299,12 +281,11 @@ impl eframe::App for App {
                                                                 ui.close_menu();
                                                                 set_open(
                                                                     open,
-                                                                    windows::WindowDeleteSource::NAME,
+                                                                    windows::source::DeleteWindow::NAME,
                                                                     true,
-                                                                    Some(Message::DeleteSource(
-                                                                        source.name.to_string(),
-                                                                        source.id,
-                                                                        folder.id
+                                                                    Some(Message::Source(
+                                                                        Action::Delete,
+                                                                        source.clone()
                                                                     )),
                                                                 );
                                                             }
@@ -312,10 +293,12 @@ impl eframe::App for App {
                                                         .changed()
                                                     {
                                                         *current_source = source.clone();
-                                                        sender.send(Message::FetchFeedsBySource (
+                                                        if let Err(e) = sender.send(Message::FetchFeedsBySource (
                                                             source.url.to_string(),
                                                             source.id,
-                                                        ));
+                                                        )) {
+                                                            tracing::error!("{}", e);
+                                                        }
                                                     }
                                                 });
                                             }

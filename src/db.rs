@@ -1,9 +1,10 @@
-use anyhow::{Context, Error, Result};
+use anyhow::Result;
 
 use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::OptionalExtension;
 
-use crate::models::Folder;
+use crate::models::{Folder, Source};
 
 pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Result<Vec<Folder>> {
     let folders = conn
@@ -28,6 +29,7 @@ pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Re
                     s.id,
                     s.name,
                     s.url,
+                    s.last_seen,
                     fs.f AS fid
                 FROM
                     sources AS s
@@ -47,7 +49,11 @@ pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Re
                     'name',
                     s.name,
                     'url',
-                    s.url
+                    s.url,
+                    'last_seen',
+                    s.last_seen,
+                    'folder_id',
+                    f.id
                 ))
             END) AS folders 
             FROM
@@ -72,11 +78,82 @@ pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Re
     Ok(folders)
 }
 
+pub fn create_folder(
+    conn: &mut PooledConnection<SqliteConnectionManager>,
+    Folder { name, .. }: &Folder,
+) -> Result<u64> {
+    let id = conn.query_row(
+        r#"
+        INSERT INTO folders (
+            name
+        )
+        VALUES (
+            ?1
+        )
+        RETURNING
+            id
+        "#,
+        [name],
+        |row| row.get(0),
+    )?;
+    Ok(id)
+}
+
+pub fn rename_folder(
+    conn: &mut PooledConnection<SqliteConnectionManager>,
+    Folder { id, name, .. }: &Folder,
+) -> Result<usize> {
+    let changed = conn.execute(
+        r#"
+        UPDATE
+            folders
+        SET
+            name = ?1
+        WHERE
+            id = ?2
+        "#,
+        rusqlite::params![name, id],
+    )?;
+    Ok(changed)
+}
+
+pub fn delete_folder(
+    conn: &mut PooledConnection<SqliteConnectionManager>,
+    Folder { id, .. }: &Folder,
+) -> Result<()> {
+    let t = conn.transaction()?;
+    t.execute(
+        r#"
+        UPDATE
+            folder_sources
+        SET
+            f = 1
+        WHERE
+            f = ?1
+        "#,
+        [id],
+    )?;
+    t.execute(
+        r#"
+        DELETE FROM
+            folders
+        WHERE
+            id = ?1
+        "#,
+        [id],
+    )?;
+    t.commit()?;
+    Ok(())
+}
+
 pub fn create_source(
-    mut conn: &mut PooledConnection<SqliteConnectionManager>,
-    url: String,
-    name: String,
-    folder_id: u64,
+    conn: &mut PooledConnection<SqliteConnectionManager>,
+    Source {
+        url,
+        name,
+        folder_id,
+        ..
+    }: &Source,
 ) -> Result<u64> {
     let t = conn.transaction()?;
     let id = t.query_row(
@@ -106,94 +183,18 @@ pub fn create_source(
             ?2
         )
         "#,
-        [id, folder_id],
+        [id, *folder_id],
     )?;
     t.commit()?;
     Ok(id)
 }
 
-pub fn create_folder(
-    conn: &mut PooledConnection<SqliteConnectionManager>,
-    name: String,
-) -> Result<Folder> {
-    let folder = conn.query_row(
-        r#"
-        INSERT INTO folders (
-            name
-        )
-        VALUES (
-            ?1
-        )
-        RETURNING
-            id,
-            name 
-        "#,
-        [name],
-        |row| {
-            Ok(Folder {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                sources: None,
-            })
-        },
-    )?;
-    Ok(folder)
-}
-
-pub fn delete_folder(
-    mut conn: &mut PooledConnection<SqliteConnectionManager>,
-    id: u64,
-) -> Result<()> {
-    let t = conn.transaction()?;
-    t.execute(
-        r#"
-        UPDATE
-            folder_sources
-        SET
-            f = 1
-        WHERE
-            f = ?1
-        "#,
-        [id],
-    )?;
-    t.execute(
-        r#"
-        DELETE FROM
-            folders
-        WHERE
-            id = ?1
-        "#,
-        [id],
-    )?;
-    t.commit()?;
-    Ok(())
-}
-
-pub fn rename_folder(
-    conn: &mut PooledConnection<SqliteConnectionManager>,
-    name: String,
-    id: u64,
-) -> Result<usize> {
-    let size = conn.execute(
-        r#"
-        UPDATE
-            folders
-        SET
-            name = ?1
-        WHERE
-            id = ?2
-        "#,
-        rusqlite::params![name.clone(), id],
-    )?;
-    Ok(size)
-}
-
 pub fn delete_source(
-    mut conn: &mut PooledConnection<SqliteConnectionManager>,
-    id: u64,
-) -> Result<()> {
+    conn: &mut PooledConnection<SqliteConnectionManager>,
+    Source { id, .. }: &Source,
+) -> Result<usize> {
     let t = conn.transaction()?;
-    t.execute(
+    let changed = t.execute(
         r#"
         DELETE FROM
             sources
@@ -203,31 +204,52 @@ pub fn delete_source(
         [id],
     )?;
     t.commit()?;
-    Ok(())
+    Ok(changed)
 }
 
 pub fn update_source(
-    mut conn: &mut PooledConnection<SqliteConnectionManager>,
-    url: String,
-    name: String,
-    id: u64,
-    folder_id: Option<u64>,
-) -> Result<()> {
+    conn: &mut PooledConnection<SqliteConnectionManager>,
+    Source {
+        id,
+        name,
+        url,
+        folder_id,
+        ..
+    }: &Source,
+) -> Result<(u64, usize)> {
     let t = conn.transaction()?;
-    if let Some(fid) = folder_id {
+    let prev_folder_id = t
+        .query_row(
+            r#"
+            SELECT
+                f
+            FROM
+                folder_sources
+            WHERE
+                s = ?1
+            AND
+                f <> ?2
+            LIMIT 1
+            "#,
+            [id, folder_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map(|v| v.unwrap_or(0))?;
+    if prev_folder_id != 0 {
         t.execute(
             r#"
-        UPDATE
-            folder_sources
-        SET
-            f = ?1
-        WHERE
-            s = ?2
-        "#,
-            [fid, id],
+            UPDATE
+                folder_sources
+            SET
+                f = ?2
+            WHERE
+                s = ?1
+            "#,
+            [id, folder_id],
         )?;
     }
-    t.execute(
+    let changed = t.execute(
         r#"
         UPDATE
             sources
@@ -240,5 +262,9 @@ pub fn update_source(
         rusqlite::params![url, name, id],
     )?;
     t.commit()?;
+    Ok((prev_folder_id, changed))
+}
+
+pub fn create_feed(conn: &mut PooledConnection<SqliteConnectionManager>) -> Result<()> {
     Ok(())
 }

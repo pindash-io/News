@@ -11,22 +11,19 @@ pub mod ui;
 pub mod windows;
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum Action {
+    Create,
+    Update,
+    Read,
+    Delete,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Message {
     Normal,
-    /// (url, name, folder id)
-    NewSource(String, String, u64),
-    /// (name)
-    NewFolder(String),
-    /// (name, id)
-    DeleteFolder(String, u64),
-    /// (name, id)
-    RenameFolder(String, u64),
-    ///
+    Source(Action, models::Source),
+    Folder(Action, models::Folder),
     RefreshFolders,
-    /// (name, id, folder id)
-    DeleteSource(String, u64, u64),
-    /// (url, name, id, folder id, prev folder id)
-    EditSource(String, String, u64, u64, Option<u64>),
     /// (url, id)
     FetchFeedsBySource(String, u64),
 }

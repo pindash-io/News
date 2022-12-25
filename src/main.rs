@@ -95,148 +95,171 @@ fn main() -> Result<()> {
                 let msg = rx.borrow();
                 tracing::info!("{:?}", &msg);
                 match msg.deref() {
-                    Message::NewSource(url, name, folder_id) => {
-                        if let Ok(id) = db::create_source(
-                            &mut conn,
-                            url.to_string(),
-                            name.to_string(),
-                            *folder_id,
-                        ) {
-                            if let Ok(mut folders) = folders_writer.write() {
-                                if let Some(folder) = folders.iter_mut().find_map(|folder| {
-                                    if folder.id == *folder_id {
-                                        Some(folder)
-                                    } else {
-                                        None
-                                    }
-                                }) {
-                                    if let Some(sources) = folder.sources.as_mut() {
-                                        sources.push(models::Source {
-                                            id,
-                                            name: name.to_string(),
-                                            url: url.to_string(),
-                                        });
-                                    }
-                                }
+                    Message::Source(action, source) => {
+                        tracing::info!("{:?} {:?}", action, source);
+                        match action {
+                            Action::Create => {
+                                db::create_source(&mut conn, source).ok().and_then(|id| {
+                                    folders_writer.write().ok().and_then(|mut folders| {
+                                        folders
+                                            .iter_mut()
+                                            .find_map(|f| {
+                                                if f.id == source.folder_id {
+                                                    Some(f)
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .map(|f| {
+                                                let mut source = source.to_owned();
+                                                source.id = id;
+                                                f.sources.get_or_insert_with(Vec::new).push(source)
+                                            })
+                                    })
+                                });
                             }
+                            Action::Update => {
+                                db::update_source(&mut conn, source).ok().and_then(
+                                    |(prev_folder_id, changed)| {
+                                        folders_writer.write().ok().map(|mut folders| {
+                                            // dont change folder
+                                            if prev_folder_id == 0 {
+                                                // update
+                                                if changed > 0 {
+                                                    folders
+                                                        .iter_mut()
+                                                        .find_map(|f| {
+                                                            if f.id == source.folder_id {
+                                                                Some(f)
+                                                            } else {
+                                                                None
+                                                            }
+                                                        })
+                                                        .and_then(|f| f.sources.as_mut())
+                                                        .and_then(|sources| {
+                                                            sources.iter_mut().find_map(|s| {
+                                                                if s.id == source.id {
+                                                                    Some(s)
+                                                                } else {
+                                                                    None
+                                                                }
+                                                            })
+                                                        })
+                                                        .map(|s| {
+                                                            *s = source.to_owned();
+                                                        });
+                                                }
+                                            } else {
+                                                folders
+                                                    .iter_mut()
+                                                    .filter(|f| {
+                                                        f.id == prev_folder_id
+                                                            || f.id == source.folder_id
+                                                    })
+                                                    .for_each(|f| {
+                                                        if f.id == prev_folder_id {
+                                                            // delete from prev folder
+                                                            f.sources.as_mut().map(|sources| {
+                                                                sources
+                                                                    .retain(|s| s.id != source.id)
+                                                            });
+                                                        } else {
+                                                            // push to new folder
+                                                            f.sources
+                                                                .get_or_insert_with(Vec::new)
+                                                                .push(source.to_owned())
+                                                        }
+                                                    })
+                                            }
+                                        })
+                                    },
+                                );
+                            }
+                            Action::Delete => {
+                                db::delete_source(&mut conn, source).ok().and_then(|_| {
+                                    folders_writer.write().ok().and_then(|mut folders| {
+                                        folders
+                                            .iter_mut()
+                                            .find_map(|f| {
+                                                if f.id == source.folder_id {
+                                                    Some(f)
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .and_then(|f| f.sources.as_mut())
+                                            .map(|sources| {
+                                                sources.retain(|s| s.id != source.id);
+                                            })
+                                    })
+                                });
+                            }
+                            Action::Read => {}
                         }
                     }
-                    Message::NewFolder(name) => {
-                        if let Ok(folder) = db::create_folder(&mut conn, name.to_string()) {
-                            if let Ok(mut folders) = folders_writer.write() {
-                                folders.push(folder);
+                    Message::Folder(action, folder) => {
+                        tracing::info!("{:?} {:?}", action, folder);
+                        match action {
+                            Action::Create => {
+                                db::create_folder(&mut conn, folder).ok().and_then(|id| {
+                                    folders_writer.write().ok().map(|mut folders| {
+                                        let mut folder = folder.to_owned();
+                                        folder.id = id;
+                                        folders.push(folder)
+                                    })
+                                });
                             }
-                        }
-                    }
-                    Message::DeleteFolder(_, id) => {
-                        if let Ok(()) = db::delete_folder(&mut conn, *id) {
-                            if let Ok(mut folders) = folders_writer.write() {
-                                folders.retain(|f| f.id != *id);
-                            }
-                        }
-                    }
-                    Message::RenameFolder(name, id) => {
-                        if db::rename_folder(&mut conn, name.clone(), *id)
-                            .ok()
-                            .filter(|n| *n == 1)
-                            .is_some()
-                        {
-                            if let Ok(mut folders) = folders_writer.write() {
-                                if let Some(folder) = folders.iter_mut().find_map(|folder| {
-                                    if folder.id == *id {
-                                        Some(folder)
-                                    } else {
-                                        None
-                                    }
-                                }) {
-                                    folder.name = name.to_string();
-                                }
-                            }
-                        }
-                    }
-                    Message::DeleteSource(_, id, folder_id) => {
-                        if let Ok(()) = db::delete_source(&mut conn, *id) {
-                            if let Ok(mut folders) = folders_writer.write() {
-                                if let Some(folder) = folders.iter_mut().find_map(|folder| {
-                                    if folder.id == *folder_id {
-                                        Some(folder)
-                                    } else {
-                                        None
-                                    }
-                                }) {
-                                    if let Some(sources) = folder.sources.as_mut() {
-                                        sources.retain(|s| s.id != *id);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Message::EditSource(url, name, id, folder_id, prev_folder_id) => {
-                        if let Ok(()) = db::update_source(
-                            &mut conn,
-                            url.to_string(),
-                            name.to_string(),
-                            *id,
-                            prev_folder_id.is_some().then_some(*folder_id),
-                        ) {
-                            // need opt!
-                            if let Ok(mut folders) = folders_writer.write() {
-                                // remove
-                                if let Some(pfid) = prev_folder_id {
-                                    // remove
-                                    if let Some(folder) = folders.iter_mut().find_map(|folder| {
-                                        if folder.id == *pfid {
-                                            Some(folder)
-                                        } else {
-                                            None
-                                        }
-                                    }) {
-                                        if let Some(sources) = folder.sources.as_mut() {
-                                            sources.retain(|s| s.id != *id);
-                                        }
-                                    }
-                                    // push
-                                    if let Some(folder) = folders.iter_mut().find_map(|folder| {
-                                        if folder.id == *folder_id {
-                                            Some(folder)
-                                        } else {
-                                            None
-                                        }
-                                    }) {
-                                        if let Some(sources) = folder.sources.as_mut() {
-                                            sources.push(models::Source {
-                                                id: *id,
-                                                name: name.to_string(),
-                                                url: url.to_string(),
-                                            });
-                                        }
-                                    }
-                                } else {
-                                    // update
-                                    if let Some(folder) = folders.iter_mut().find_map(|folder| {
-                                        if folder.id == *folder_id {
-                                            Some(folder)
-                                        } else {
-                                            None
-                                        }
-                                    }) {
-                                        if let Some(sources) = folder.sources.as_mut() {
-                                            if let Some(source) =
-                                                sources.iter_mut().find_map(|source| {
-                                                    if source.id == *id {
-                                                        Some(source)
+                            Action::Update => {
+                                db::rename_folder(&mut conn, folder)
+                                    .ok()
+                                    .filter(|n| *n == 1)
+                                    .and_then(|_| {
+                                        folders_writer.write().ok().map(|mut folders| {
+                                            folders
+                                                .iter_mut()
+                                                .find_map(|f| {
+                                                    if f.id == folder.id {
+                                                        Some(f)
                                                     } else {
                                                         None
                                                     }
                                                 })
-                                            {
-                                                source.name = name.to_string();
-                                                source.url = url.to_string();
-                                            }
-                                        }
-                                    }
-                                }
+                                                .map(|f| {
+                                                    f.name = folder.name.to_owned();
+                                                })
+                                        })
+                                    });
                             }
+                            Action::Delete => {
+                                // mv other folder's sources to folder 1
+                                db::delete_folder(&mut conn, folder).ok().and_then(|_| {
+                                    folders_writer.write().ok().map(|mut folders| {
+                                        let mut tmp = folders
+                                            .iter()
+                                            .enumerate()
+                                            .filter_map(|(i, f)| {
+                                                if f.id == 1 || f.id == folder.id {
+                                                    Some((i, f.id))
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .collect::<Vec<_>>();
+
+                                        tmp.sort_by_key(|&(_, id)| id);
+
+                                        let prev = folders.remove(tmp[1].0);
+
+                                        prev.sources.map(move |sources| {
+                                            folders[tmp[0].0]
+                                                .sources
+                                                .get_or_insert_with(Vec::new)
+                                                .extend_from_slice(&sources)
+                                        });
+                                    })
+                                });
+                            }
+                            Action::Read => {}
                         }
                     }
                     Message::FetchFeedsBySource(url, id) => {

@@ -13,6 +13,8 @@ pub struct Source {
     pub id: u64,
     pub name: String,
     pub url: String,
+    pub last_seen: u64,
+    pub folder_id: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
@@ -23,4 +25,25 @@ pub struct Feed {
     pub content: String,
     pub author: String,
     pub created: u64,
+}
+
+impl Source {
+    pub fn new(url: String, name: String, folder_id: u64) -> Self {
+        Self {
+            id: 0,
+            name,
+            url,
+            folder_id,
+            last_seen: 0,
+        }
+    }
+}
+
+impl Folder {
+    pub fn clone_without_sources(&self) -> Self {
+        Self {
+            sources: None,
+            ..self.clone()
+        }
+    }
 }
