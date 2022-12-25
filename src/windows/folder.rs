@@ -5,10 +5,7 @@ use std::{
 
 use eframe::{egui, emath};
 
-use crate::{
-    models::Folder,
-    Action, Message, Store,
-};
+use crate::{models::Folder, Action, Message, Store};
 
 use super::{View, Window};
 

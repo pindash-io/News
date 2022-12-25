@@ -248,9 +248,7 @@ fn main() -> Result<()> {
 
                                         tmp.sort_by_key(|&(_, id)| id);
 
-                                        let prev = folders.remove(tmp[1].0);
-
-                                        prev.sources.map(move |sources| {
+                                        folders.remove(tmp[1].0).sources.map(move |sources| {
                                             folders[tmp[0].0]
                                                 .sources
                                                 .get_or_insert_with(Vec::new)
