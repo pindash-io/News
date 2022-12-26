@@ -16,16 +16,15 @@ pub enum Action {
     Update,
     Read,
     Delete,
+    Fetch,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Message {
     Normal,
-    Source(Action, models::Source),
-    Folder(Action, models::Folder),
     RefreshFolders,
-    /// (url, id)
-    FetchFeedsBySource(String, u64),
+    Feed(Action, models::Feed),
+    Folder(Action, models::Folder),
 }
 
 #[derive(Debug)]

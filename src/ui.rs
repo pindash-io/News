@@ -16,7 +16,7 @@ pub struct App {
 
     store: Store,
 
-    source: models::Source,
+    feed: models::Feed,
 }
 
 impl App {
@@ -61,9 +61,9 @@ impl App {
         );
 
         let windows: Vec<Box<dyn windows::Window>> = vec![
-            Box::new(windows::source::AddWindow::default()),
-            Box::new(windows::source::DeleteWindow::default()),
-            Box::new(windows::source::EditWindow::default()),
+            Box::new(windows::feed::AddWindow::default()),
+            Box::new(windows::feed::DeleteWindow::default()),
+            Box::new(windows::feed::EditWindow::default()),
             Box::new(windows::folder::AddWindow::default()),
             Box::new(windows::folder::DeleteWindow::default()),
             Box::new(windows::folder::EditWindow::default()),
@@ -75,7 +75,7 @@ impl App {
             icons,
             windows,
             open,
-            source: models::Source::default(),
+            feed: models::Feed::default(),
         }
     }
 
@@ -119,7 +119,7 @@ impl eframe::App for App {
                             ui.close_menu();
                             set_open(
                                 &mut self.open,
-                                windows::source::AddWindow::NAME,
+                                windows::feed::AddWindow::NAME,
                                 true,
                                 Some(Message::RefreshFolders),
                             );
@@ -160,7 +160,7 @@ impl eframe::App for App {
                         let folder_img = self.icons.get("folder").unwrap();
                         let link_img = self.icons.get("link").unwrap();
                         let open = &mut self.open;
-                        let current_source = &mut self.source;
+                        let current_feed= &mut self.feed;
                         let Store { folders, sender, .. } = &self.store;
 
                         // fn circle_icon(ui: &mut egui::Ui, openness: f32, response: &egui::Response) {
@@ -179,10 +179,10 @@ impl eframe::App for App {
                         //                 |ui| {
                         //                     ui.horizontal(|ui| {
                         //     state.show_toggle_button(ui, circle_icon);
-                        //     let id = current_source.id;
+                        //     let id = current_feed.id;
                         //                             ui
                         //                                 .selectable_value(
-                        //                                     &mut current_source.id,
+                        //                                     &mut current_feed.id,
                         //                                     id,
                         //                                     "dsfldsl sdfjlds ",
                         //                                 );
@@ -222,7 +222,7 @@ impl eframe::App for App {
                                                 true,
                                                 Some(Message::Folder(
                                                     Action::Update,
-                                                    folder.clone_without_sources()
+                                                    folder.clone_without_feeds()
                                                 )),
                                             );
                                         }
@@ -235,7 +235,7 @@ impl eframe::App for App {
                                                     true,
                                                     Some(Message::Folder(
                                                         Action::Delete,
-                                                        folder.clone_without_sources()
+                                                        folder.clone_without_feeds()
                                                     )),
                                                 );
                                             }
@@ -246,13 +246,13 @@ impl eframe::App for App {
                                     ui.with_layout(
                                         egui::Layout::top_down_justified(egui::Align::LEFT),
                                         |ui| {
-                                            if let Some(sources) = &folder.sources {
-                                                sources.iter().for_each(|source| {
+                                            if let Some(feeds) = &folder.feeds{
+                                                feeds.iter().for_each(|feed| {
                                                     if ui
                                                         .selectable_value(
-                                                            &mut current_source.id,
-                                                            source.id,
-                                                            source.name.to_string(),
+                                                            &mut current_feed.id,
+                                                            feed.id,
+                                                            feed.name.to_string(),
                                                         )
                                                         .context_menu(|ui| {
                                                             ui.horizontal(|ui| {
@@ -260,7 +260,7 @@ impl eframe::App for App {
                                                                     link_img.texture_id(ctx),
                                                                     link_img.size_vec2() * 0.5,
                                                                 );
-                                                                ui.label(source.name.to_string());
+                                                                ui.label(feed.name.to_string());
                                                             });
                                                             ui.separator();
                                                             ui.button("Mark as read");
@@ -269,11 +269,11 @@ impl eframe::App for App {
                                                                 ui.close_menu();
                                                                 set_open(
                                                                     open,
-                                                                    windows::source::EditWindow::NAME,
+                                                                    windows::feed::EditWindow::NAME,
                                                                     true,
-                                                                    Some(Message::Source(
+                                                                    Some(Message::Feed(
                                                                         Action::Update,
-                                                                        source.clone()
+                                                                        feed.clone()
                                                                     )),
                                                                 );
                                                             }
@@ -281,21 +281,21 @@ impl eframe::App for App {
                                                                 ui.close_menu();
                                                                 set_open(
                                                                     open,
-                                                                    windows::source::DeleteWindow::NAME,
+                                                                    windows::feed::DeleteWindow::NAME,
                                                                     true,
-                                                                    Some(Message::Source(
+                                                                    Some(Message::Feed(
                                                                         Action::Delete,
-                                                                        source.clone()
+                                                                        feed.clone()
                                                                     )),
                                                                 );
                                                             }
                                                         })
                                                         .changed()
                                                     {
-                                                        *current_source = source.clone();
-                                                        if let Err(e) = sender.send(Message::FetchFeedsBySource (
-                                                            source.url.to_string(),
-                                                            source.id,
+                                                        *current_feed = feed.clone();
+                                                        if let Err(e) = sender.send(Message::Feed (
+                                                            Action::Fetch,
+                                                            feed.clone(),
                                                         )) {
                                                             tracing::error!("{}", e);
                                                         }
@@ -312,7 +312,7 @@ impl eframe::App for App {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let mut name = self.source.name.to_string();
+                let mut name = self.feed.name.to_string();
                 if name.is_empty() {
                     name.push_str("Feeds");
                 }

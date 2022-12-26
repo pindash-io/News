@@ -6,7 +6,7 @@ use std::{
 use eframe::{egui, emath};
 
 use crate::{
-    models::{Folder, Source},
+    models::{Feed, Folder},
     Action, Message, Store,
 };
 
@@ -23,7 +23,7 @@ pub struct AddWindow {
 }
 
 impl AddWindow {
-    pub const NAME: &'static str = "Add Source";
+    pub const NAME: &'static str = "Add Feed";
 }
 
 impl Window for AddWindow {
@@ -42,7 +42,7 @@ impl Window for AddWindow {
         // must
         if let Some(Message::RefreshFolders) = data.take() {
             if let Ok(reader) = store.folders.read() {
-                self.folder = reader[0].clone_without_sources();
+                self.folder = reader[0].clone_without_feeds();
                 self.folders = Some(reader.to_vec());
             }
         }
@@ -64,7 +64,7 @@ impl View for AddWindow {
     fn ui(&mut self, ui: &mut egui::Ui, store: &Store) {
         ui.horizontal(|ui| {
             ui.add_sized((50., 24.), egui::Label::new("URL:"));
-            ui.add(egui::TextEdit::singleline(&mut self.url).hint_text("Write source url"));
+            ui.add(egui::TextEdit::singleline(&mut self.url).hint_text("Write feed url"));
         });
         ui.end_row();
         ui.horizontal(|ui| {
@@ -103,12 +103,12 @@ impl View for AddWindow {
                             return;
                         }
 
-                        let source = Source::new(
+                        let feed = Feed::new(
                             mem::replace(&mut self.url, "".to_string()),
                             mem::replace(&mut self.name, "".to_string()),
                             self.folder.id,
                         );
-                        if let Err(e) = store.sender.send(Message::Source(Action::Create, source)) {
+                        if let Err(e) = store.sender.send(Message::Feed(Action::Create, feed)) {
                             tracing::error!("{e}");
                         } else {
                             self.closed = true;
@@ -123,12 +123,12 @@ impl View for AddWindow {
 #[derive(Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct DeleteWindow {
-    source: Source,
+    feed: Feed,
     closed: bool,
 }
 
 impl DeleteWindow {
-    pub const NAME: &'static str = "Delete Source";
+    pub const NAME: &'static str = "Delete Feed";
 }
 
 impl Window for DeleteWindow {
@@ -144,8 +144,8 @@ impl Window for DeleteWindow {
         size: egui::Vec2,
         data: Option<Message>,
     ) {
-        if let Some(Message::Source(_, source)) = data {
-            self.source = source
+        if let Some(Message::Feed(_, feed)) = data {
+            self.feed = feed;
         }
         self.closed = false;
         egui::Window::new(self.name())
@@ -164,8 +164,8 @@ impl Window for DeleteWindow {
 impl View for DeleteWindow {
     fn ui(&mut self, ui: &mut egui::Ui, store: &Store) {
         ui.label(format!(
-            "Are you sure you want to delete the '{}' source?",
-            self.source.name
+            "Are you sure you want to delete the '{}' feed?",
+            self.feed.name
         ));
         ui.end_row();
 
@@ -174,9 +174,9 @@ impl View for DeleteWindow {
             move |ui| {
                 ui.horizontal_wrapped(move |ui| {
                     if ui.button("Ok").clicked() {
-                        if let Err(e) = store.sender.send(Message::Source(
+                        if let Err(e) = store.sender.send(Message::Feed(
                             Action::Delete,
-                            mem::replace(&mut self.source, Source::default()),
+                            mem::replace(&mut self.feed, Feed::default()),
                         )) {
                             tracing::error!("{e}");
                         } else {
@@ -192,14 +192,14 @@ impl View for DeleteWindow {
 #[derive(Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct EditWindow {
-    source: Source,
+    feed: Feed,
     folder: Folder,
     closed: bool,
     folders: Option<Vec<Folder>>,
 }
 
 impl EditWindow {
-    pub const NAME: &'static str = "Edit Source";
+    pub const NAME: &'static str = "Edit Feed";
 }
 
 impl Window for EditWindow {
@@ -216,9 +216,9 @@ impl Window for EditWindow {
         mut data: Option<Message>,
     ) {
         // must
-        if let Some(Message::Source(_, source)) = data.take() {
-            let folder_id = source.folder_id;
-            self.source = source;
+        if let Some(Message::Feed(_, feed)) = data.take() {
+            let folder_id = feed.folder_id;
+            self.feed = feed;
             if let Ok(reader) = store.folders.read() {
                 self.folder = reader
                     .iter()
@@ -247,12 +247,12 @@ impl View for EditWindow {
     fn ui(&mut self, ui: &mut egui::Ui, store: &Store) {
         ui.horizontal(|ui| {
             ui.add_sized((50., 24.), egui::Label::new("URL:"));
-            ui.add(egui::TextEdit::singleline(&mut self.source.url).hint_text("Write feed url"));
+            ui.add(egui::TextEdit::singleline(&mut self.feed.url).hint_text("Write feed url"));
         });
         ui.end_row();
         ui.horizontal(|ui| {
             ui.add_sized((50., 24.), egui::Label::new("Name:"));
-            ui.add(egui::TextEdit::singleline(&mut self.source.name).hint_text("Opional"));
+            ui.add(egui::TextEdit::singleline(&mut self.feed.name).hint_text("Opional"));
         });
         ui.end_row();
 
@@ -282,14 +282,14 @@ impl View for EditWindow {
             move |ui| {
                 ui.horizontal_wrapped(move |ui| {
                     if ui.button("Save").clicked() {
-                        if self.source.url.is_empty() || self.source.name.is_empty() {
+                        if self.feed.url.is_empty() || self.feed.name.is_empty() {
                             return;
                         }
 
                         let folder = mem::replace(&mut self.folder, Folder::default());
-                        let mut source = mem::replace(&mut self.source, Source::default());
-                        source.folder_id = folder.id;
-                        if let Err(e) = store.sender.send(Message::Source(Action::Update, source)) {
+                        let mut feed = mem::replace(&mut self.feed, Feed::default());
+                        feed.folder_id = folder.id;
+                        if let Err(e) = store.sender.send(Message::Feed(Action::Update, feed)) {
                             tracing::error!("{e}");
                         } else {
                             self.closed = true;

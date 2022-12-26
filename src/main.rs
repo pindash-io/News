@@ -14,6 +14,7 @@ use std::{
 
 use anyhow::{Error, Result};
 use eframe::egui;
+use image::EncodableLayout;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, OpenFlags};
@@ -65,6 +66,18 @@ fn main() -> Result<()> {
             M::up(include_str!("../migrations/3-feeds.sql")),
             M::up(include_str!("../migrations/4-seed.sql")),
             M::up(include_str!("../migrations/5-rename-date-columns.sql")),
+            M::up(include_str!("../migrations/6-feeds-add-url-published.sql")),
+            M::up(include_str!("../migrations/7-authors.sql")),
+            M::up(include_str!("../migrations/8-rename-tables.sql")),
+            M::up(include_str!(
+                "../migrations/9-authors-rename-article_id-to-feed_id.sql"
+            )),
+            M::up(include_str!(
+                "../migrations/10-articles-rename-source_id-to-feed_id.sql"
+            )),
+            M::up(include_str!(
+                "../migrations/11-feeds-add-site-type-title.sql"
+            )),
         ]);
 
         let mut conn = pool.get()?;
@@ -95,31 +108,31 @@ fn main() -> Result<()> {
                 let msg = rx.borrow();
                 tracing::info!("{:?}", &msg);
                 match msg.deref() {
-                    Message::Source(action, source) => {
-                        tracing::info!("{:?} {:?}", action, source);
+                    Message::Feed(action, feed) => {
+                        tracing::info!("{:?} {:?}", action, feed);
                         match action {
                             Action::Create => {
-                                db::create_source(&mut conn, source).ok().and_then(|id| {
+                                db::create_feed(&mut conn, feed).ok().and_then(|id| {
                                     folders_writer.write().ok().and_then(|mut folders| {
                                         folders
                                             .iter_mut()
                                             .find_map(|f| {
-                                                if f.id == source.folder_id {
+                                                if f.id == feed.folder_id {
                                                     Some(f)
                                                 } else {
                                                     None
                                                 }
                                             })
                                             .map(|f| {
-                                                let mut source = source.to_owned();
-                                                source.id = id;
-                                                f.sources.get_or_insert_with(Vec::new).push(source)
+                                                let mut feed = feed.to_owned();
+                                                feed.id = id;
+                                                f.feeds.get_or_insert_with(Vec::new).push(feed)
                                             })
                                     })
                                 });
                             }
                             Action::Update => {
-                                db::update_source(&mut conn, source).ok().and_then(
+                                db::update_feed(&mut conn, feed).ok().and_then(
                                     |(prev_folder_id, changed)| {
                                         folders_writer.write().ok().map(|mut folders| {
                                             // dont change folder
@@ -129,16 +142,16 @@ fn main() -> Result<()> {
                                                     folders
                                                         .iter_mut()
                                                         .find_map(|f| {
-                                                            if f.id == source.folder_id {
+                                                            if f.id == feed.folder_id {
                                                                 Some(f)
                                                             } else {
                                                                 None
                                                             }
                                                         })
-                                                        .and_then(|f| f.sources.as_mut())
-                                                        .and_then(|sources| {
-                                                            sources.iter_mut().find_map(|s| {
-                                                                if s.id == source.id {
+                                                        .and_then(|f| f.feeds.as_mut())
+                                                        .and_then(|feeds| {
+                                                            feeds.iter_mut().find_map(|s| {
+                                                                if s.id == feed.id {
                                                                     Some(s)
                                                                 } else {
                                                                     None
@@ -146,7 +159,7 @@ fn main() -> Result<()> {
                                                             })
                                                         })
                                                         .map(|s| {
-                                                            *s = source.to_owned();
+                                                            *s = feed.to_owned();
                                                         });
                                                 }
                                             } else {
@@ -154,20 +167,19 @@ fn main() -> Result<()> {
                                                     .iter_mut()
                                                     .filter(|f| {
                                                         f.id == prev_folder_id
-                                                            || f.id == source.folder_id
+                                                            || f.id == feed.folder_id
                                                     })
                                                     .for_each(|f| {
                                                         if f.id == prev_folder_id {
                                                             // delete from prev folder
-                                                            f.sources.as_mut().map(|sources| {
-                                                                sources
-                                                                    .retain(|s| s.id != source.id)
+                                                            f.feeds.as_mut().map(|feeds| {
+                                                                feeds.retain(|s| s.id != feed.id)
                                                             });
                                                         } else {
                                                             // push to new folder
-                                                            f.sources
+                                                            f.feeds
                                                                 .get_or_insert_with(Vec::new)
-                                                                .push(source.to_owned())
+                                                                .push(feed.to_owned())
                                                         }
                                                     })
                                             }
@@ -176,25 +188,71 @@ fn main() -> Result<()> {
                                 );
                             }
                             Action::Delete => {
-                                db::delete_source(&mut conn, source).ok().and_then(|_| {
+                                db::delete_feed(&mut conn, feed).ok().and_then(|_| {
                                     folders_writer.write().ok().and_then(|mut folders| {
                                         folders
                                             .iter_mut()
                                             .find_map(|f| {
-                                                if f.id == source.folder_id {
+                                                if f.id == feed.folder_id {
                                                     Some(f)
                                                 } else {
                                                     None
                                                 }
                                             })
-                                            .and_then(|f| f.sources.as_mut())
-                                            .map(|sources| {
-                                                sources.retain(|s| s.id != source.id);
+                                            .and_then(|f| f.feeds.as_mut())
+                                            .map(|feeds| {
+                                                feeds.retain(|s| s.id != feed.id);
                                             })
                                     })
                                 });
                             }
-                            Action::Read => {}
+                            Action::Fetch => {
+                                let url = feed.url.to_string();
+                                tokio::task::spawn(async move {
+                                    let content = reqwest::get(url).await?.bytes().await?;
+                                    let feed_rs::model::Feed {
+                                        feed_type,
+                                        id,
+                                        title,
+                                        description,
+                                        updated,
+                                        logo,
+                                        icon,
+                                        authors,
+                                        entries,
+                                        links,
+                                        categories,
+                                        contributors,
+                                        published,
+                                        ttl,
+                                        generator,
+                                        language,
+                                        rating,
+                                        rights,
+                                    } = feed_rs::parser::parse(content.as_bytes())?;
+
+                                    tracing::info!("{:?}", feed_type);
+                                    tracing::info!("{:?}", id);
+                                    tracing::info!("{:?}", title);
+                                    tracing::info!("{:?}", description);
+                                    tracing::info!("{:?}", updated);
+                                    tracing::info!("{:?}", logo);
+                                    tracing::info!("{:?}", icon);
+                                    tracing::info!("{:?}", entries.len());
+
+                                    tracing::info!("{:?}", links);
+                                    tracing::info!("{:?}", categories);
+                                    tracing::info!("{:?}", contributors);
+                                    tracing::info!("{:?}", published);
+                                    tracing::info!("{:?}", ttl);
+                                    tracing::info!("{:?}", generator);
+                                    tracing::info!("{:?}", language);
+                                    tracing::info!("{:?}", rating);
+                                    tracing::info!("{:?}", rights);
+                                    Ok::<(), Error>(())
+                                });
+                            }
+                            _ => {}
                         }
                     }
                     Message::Folder(action, folder) => {
@@ -231,7 +289,7 @@ fn main() -> Result<()> {
                                     });
                             }
                             Action::Delete => {
-                                // mv other folder's sources to folder 1
+                                // mv other folder's feeds to folder 1
                                 db::delete_folder(&mut conn, folder).ok().and_then(|_| {
                                     folders_writer.write().ok().map(|mut folders| {
                                         let mut tmp = folders
@@ -248,40 +306,17 @@ fn main() -> Result<()> {
 
                                         tmp.sort_by_key(|&(_, id)| id);
 
-                                        folders.remove(tmp[1].0).sources.map(move |sources| {
+                                        folders.remove(tmp[1].0).feeds.map(move |feeds| {
                                             folders[tmp[0].0]
-                                                .sources
+                                                .feeds
                                                 .get_or_insert_with(Vec::new)
-                                                .extend_from_slice(&sources)
+                                                .extend_from_slice(&feeds)
                                         });
                                     })
                                 });
                             }
-                            Action::Read => {}
+                            _ => {}
                         }
-                    }
-                    Message::FetchFeedsBySource(url, id) => {
-                        let url = url.to_string();
-                        tokio::task::spawn(async move {
-                            let content = reqwest::get(url).await?.text().await?;
-                            let data = syndication::Feed::from_str(&content)
-                                .map_err(|e| anyhow::anyhow!(e))?;
-
-                            match data {
-                                syndication::Feed::Atom(feed) => {
-                                    tracing::info!("atom {:?}", feed.authors());
-                                    tracing::info!("atom {:?}", feed.links());
-                                    tracing::info!("atom {:?}", feed.logo());
-                                    tracing::info!("atom {:?}", feed.updated());
-                                    tracing::info!("atom {:?}", feed.entries());
-                                }
-                                syndication::Feed::RSS(feed) => {
-                                    tracing::info!("rss  {:?}", feed);
-                                }
-                            }
-
-                            Ok::<(), Error>(())
-                        });
                     }
                     _ => {}
                 }

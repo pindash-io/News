@@ -1,0 +1,5 @@
+ALTER TABLE feeds ADD COLUMN url TEXT NOT NULL;
+ALTER TABLE feeds ADD COLUMN published INTEGER NOT NULL DEFAULT 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS unique_feeds_url ON feeds (url);
+CREATE UNIQUE INDEX IF NOT EXISTS unique_sources_url ON sources (url);

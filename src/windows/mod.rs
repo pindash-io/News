@@ -2,8 +2,8 @@ use eframe::egui;
 
 use crate::{Message, Store};
 
+pub mod feed;
 pub mod folder;
-pub mod source;
 
 pub trait View {
     fn ui(&mut self, ui: &mut egui::Ui, store: &Store);

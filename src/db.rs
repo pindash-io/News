@@ -4,75 +4,76 @@ use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::OptionalExtension;
 
-use crate::models::{Folder, Source};
+use crate::models::{Article, Feed, Folder};
 
 pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Result<Vec<Folder>> {
     let folders = conn
         .prepare_cached(
             r#"
-            WITH f AS (
+            WITH d AS (
                 SELECT
                     id,
                     name
                 FROM
                     folders
             ),
-            fs AS (
+            df AS (
                 SELECT
-                    f,
-                    s
+                    d,
+                    f
                 FROM
-                    folder_sources
+                    folder_feeds
             ),
-            s AS (
+            f AS (
                 SELECT
-                    s.id,
-                    s.name,
-                    s.url,
-                    s.last_seen,
-                    fs.f AS fid
+                    f.id,
+                    f.name,
+                    f.url,
+                    f.last_seen,
+                    df.d
                 FROM
-                    sources AS s
+                    feeds AS f
                 INNER JOIN
-                    fs
+                    df
                 ON
-                    fs.s = s.id
+                    df.f = f.id
             )
             SELECT
-                f.id,
-                f.name,
-                (CASE count(s.fid)
+                d.id,
+                d.name,
+                (CASE count(f.d)
                 WHEN 0 THEN NULL
                 ELSE json_group_array(json_object(
                     'id',
-                    s.id,
+                    f.id,
                     'name',
-                    s.name,
+                    f.name,
                     'url',
-                    s.url,
+                    f.url,
                     'last_seen',
-                    s.last_seen,
+                    f.last_seen,
                     'folder_id',
-                    f.id
+                    d.id
                 ))
-            END) AS folders 
+            END) AS feeds
             FROM
-                f
+                d
             LEFT JOIN
-                s
+                f
             ON
-                s.fid = f.id 
+                f.d = d.id 
             GROUP BY
-                f.id
+                d.id
             "#,
         )?
         .query_map([], |row| {
-            let id = row.get(0)?;
-            let name = row.get(1)?;
-            let sources = row
-                .get::<_, Option<serde_json::Value>>(2)?
-                .and_then(|v| serde_json::from_value(v).ok());
-            Ok(Folder { id, name, sources })
+            Ok(Folder {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                feeds: row
+                    .get::<_, Option<serde_json::Value>>(2)?
+                    .and_then(|v| serde_json::from_value(v).ok()),
+            })
         })
         .map(|rows| rows.filter_map(Result::ok).collect::<Vec<_>>())?;
     Ok(folders)
@@ -125,11 +126,11 @@ pub fn delete_folder(
     t.execute(
         r#"
         UPDATE
-            folder_sources
+            folder_feeds
         SET
-            f = 1
+            d = 1
         WHERE
-            f = ?1
+            d = ?1
         "#,
         [id],
     )?;
@@ -146,19 +147,19 @@ pub fn delete_folder(
     Ok(())
 }
 
-pub fn create_source(
+pub fn create_feed(
     conn: &mut PooledConnection<SqliteConnectionManager>,
-    Source {
+    Feed {
         url,
         name,
         folder_id,
         ..
-    }: &Source,
+    }: &Feed,
 ) -> Result<u64> {
     let t = conn.transaction()?;
     let id = t.query_row(
         r#"
-        INSERT INTO sources (
+        INSERT INTO feeds (
             url,
             name
         )
@@ -174,9 +175,9 @@ pub fn create_source(
     )?;
     t.execute(
         r#"
-        INSERT INTO folder_sources (
-            s,
-            f
+        INSERT INTO folder_feeds (
+            f,
+            d
         )
         VALUES (
             ?1,
@@ -189,15 +190,15 @@ pub fn create_source(
     Ok(id)
 }
 
-pub fn delete_source(
+pub fn delete_feed(
     conn: &mut PooledConnection<SqliteConnectionManager>,
-    Source { id, .. }: &Source,
+    Feed { id, .. }: &Feed,
 ) -> Result<usize> {
     let t = conn.transaction()?;
     let changed = t.execute(
         r#"
         DELETE FROM
-            sources
+            feeds
         WHERE
             id = ?1
         "#,
@@ -207,28 +208,28 @@ pub fn delete_source(
     Ok(changed)
 }
 
-pub fn update_source(
+pub fn update_feed(
     conn: &mut PooledConnection<SqliteConnectionManager>,
-    Source {
+    Feed {
         id,
         name,
         url,
         folder_id,
         ..
-    }: &Source,
+    }: &Feed,
 ) -> Result<(u64, usize)> {
     let t = conn.transaction()?;
     let prev_folder_id = t
         .query_row(
             r#"
             SELECT
-                f
+                d
             FROM
-                folder_sources
+                folder_feeds
             WHERE
-                s = ?1
+                f = ?1
             AND
-                f <> ?2
+                d <> ?2
             LIMIT 1
             "#,
             [id, folder_id],
@@ -240,11 +241,11 @@ pub fn update_source(
         t.execute(
             r#"
             UPDATE
-                folder_sources
+                folder_feeds
             SET
-                f = ?2
+                d = ?2
             WHERE
-                s = ?1
+                f = ?1
             "#,
             [id, folder_id],
         )?;
@@ -252,7 +253,7 @@ pub fn update_source(
     let changed = t.execute(
         r#"
         UPDATE
-            sources
+            feeds
         SET
             url = ?1,
             name = ?2
@@ -265,6 +266,33 @@ pub fn update_source(
     Ok((prev_folder_id, changed))
 }
 
-pub fn create_feed(conn: &mut PooledConnection<SqliteConnectionManager>) -> Result<()> {
+pub fn create_articles(
+    conn: &mut PooledConnection<SqliteConnectionManager>,
+    Feed { id, .. }: &Feed,
+    updated: &str,
+    // feeds: &[Entry],
+) -> Result<()> {
+    let t = conn.transaction()?;
+
+    {
+        let mut stmt = t.prepare_cached(
+            r#"
+            INSERT INTO articles (
+                feed_id,
+                title,
+                content,
+                author
+            )
+            VALUES (
+                ?1,
+                ?2,
+                ?3,
+                ?4
+            )
+            "#,
+        )?;
+    }
+
+    t.commit()?;
     Ok(())
 }

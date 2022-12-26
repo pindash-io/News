@@ -1,0 +1,1 @@
+ALTER TABLE authors RENAME COLUMN article_id TO feed_id;

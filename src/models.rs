@@ -5,11 +5,11 @@ pub struct Folder {
     pub id: u64,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sources: Option<Vec<Source>>,
+    pub feeds: Option<Vec<Feed>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
-pub struct Source {
+pub struct Feed {
     pub id: u64,
     pub name: String,
     pub url: String,
@@ -18,16 +18,24 @@ pub struct Source {
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
-pub struct Feed {
+pub struct Author {
     pub id: u64,
-    pub source_id: u64,
-    pub title: String,
-    pub content: String,
-    pub author: String,
-    pub created: u64,
+    pub name: String,
 }
 
-impl Source {
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
+pub struct Article {
+    pub id: u64,
+    pub feed_id: u64,
+    pub url: String,
+    pub title: String,
+    pub content: String,
+    pub published: u64,
+    pub created: u64,
+    pub authors: Vec<Author>,
+}
+
+impl Feed {
     pub fn new(url: String, name: String, folder_id: u64) -> Self {
         Self {
             id: 0,
@@ -40,9 +48,9 @@ impl Source {
 }
 
 impl Folder {
-    pub fn clone_without_sources(&self) -> Self {
+    pub fn clone_without_feeds(&self) -> Self {
         Self {
-            sources: None,
+            feeds: None,
             ..self.clone()
         }
     }

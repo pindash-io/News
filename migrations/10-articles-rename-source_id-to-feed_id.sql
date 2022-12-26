@@ -1,0 +1,1 @@
+ALTER TABLE articles RENAME COLUMN source_id TO feed_id;
