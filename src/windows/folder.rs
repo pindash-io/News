@@ -4,13 +4,13 @@ use std::{
 };
 
 use eframe::{egui, emath};
+use serde::{Deserialize, Serialize};
 
 use crate::{models::Folder, Action, Message, Store};
 
 use super::{View, Window};
 
-#[derive(Clone, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct AddWindow {
     name: String,
     closed: bool,
@@ -77,8 +77,7 @@ impl View for AddWindow {
     }
 }
 
-#[derive(Clone, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DeleteWindow {
     folder: Folder,
     closed: bool,
@@ -146,8 +145,7 @@ impl View for DeleteWindow {
     }
 }
 
-#[derive(Clone, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct EditWindow {
     folder: Folder,
     name: String,

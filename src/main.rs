@@ -78,6 +78,12 @@ fn main() -> Result<()> {
             M::up(include_str!(
                 "../migrations/11-feeds-add-site-type-title.sql"
             )),
+            M::up(include_str!(
+                "../migrations/12-feeds-rename-published-to-updated.sql"
+            )),
+            M::up(include_str!(
+                "../migrations/13-feeds-add-unique-index-feed_id-url.sql"
+            )),
         ]);
 
         let mut conn = pool.get()?;
@@ -102,13 +108,12 @@ fn main() -> Result<()> {
             .build()?;
 
         rt.block_on(async move {
-            let mut conn = pool.get()?;
-
             while rx.changed().await.is_ok() {
                 let msg = rx.borrow();
                 tracing::info!("{:?}", &msg);
                 match msg.deref() {
                     Message::Feed(action, feed) => {
+                        let mut conn = pool.get()?;
                         tracing::info!("{:?} {:?}", action, feed);
                         match action {
                             Action::Create => {
@@ -207,48 +212,86 @@ fn main() -> Result<()> {
                                 });
                             }
                             Action::Fetch => {
-                                let url = feed.url.to_string();
+                                let feed = feed.to_owned();
                                 tokio::task::spawn(async move {
-                                    let content = reqwest::get(url).await?.bytes().await?;
+                                    let data = reqwest::get(&feed.url).await?.bytes().await?;
                                     let feed_rs::model::Feed {
-                                        feed_type,
                                         id,
+                                        feed_type,
                                         title,
                                         description,
+                                        entries,
                                         updated,
-                                        logo,
-                                        icon,
+                                        authors,
+                                        links,
+                                        ..
+                                        // logo,
+                                        // icon,
+                                        // categories,
+                                        // contributors,
+                                        // published,
+                                        // ttl,
+                                        // language,
+                                        // rating,
+                                        // rights,
+                                        // generator,
+                                    } = feed_rs::parser::parse(data.as_ref())?;
+
+                                    let site = links
+                                        .iter()
+                                        .find_map(|link| {
+                                            if !link.href.ends_with(".xml")
+                                                && !link.href.ends_with(".atom")
+                                            {
+                                                Some(link.href.to_owned())
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .or_else(|| {
+                                            // Fixed, https://go.dev/blog
+                                            if id.contains(',') {
+                                                None
+                                            } else {
+                                                url::Url::parse(&id)
+                                                    .map(|link| link.as_str().to_owned())
+                                                    .ok()
+                                            }
+                                        })
+                                        .unwrap_or_else(|| {
+                                            let url = links
+                                                .first()
+                                                .map(|link| link.href.to_owned())
+                                                .unwrap_or(feed.url.to_owned());
+
+                                            url.trim_end_matches("rss.xml")
+                                                .trim_end_matches("atom.xml")
+                                                .trim_end_matches("index.xml")
+                                                .trim_end_matches("feed.xml")
+                                                .trim_end_matches("feed.atom")
+                                                .to_string()
+                                        });
+
+                                    db::update_feed_ext(
+                                        &mut conn,
+                                        &feed,
+                                        &site,
+                                        feed_type,
+                                        title.map(|t| t.content),
+                                        description.map(|t| t.content),
+                                    )?;
+
+                                    db::create_articles(
+                                        &mut conn,
+                                        &feed,
+                                        &site,
+                                        updated.or_else(|| {
+                                            entries.first().and_then(|e| e.updated.or(e.published))
+                                        }),
                                         authors,
                                         entries,
-                                        links,
-                                        categories,
-                                        contributors,
-                                        published,
-                                        ttl,
-                                        generator,
-                                        language,
-                                        rating,
-                                        rights,
-                                    } = feed_rs::parser::parse(content.as_bytes())?;
+                                    )?;
 
-                                    tracing::info!("{:?}", feed_type);
-                                    tracing::info!("{:?}", id);
-                                    tracing::info!("{:?}", title);
-                                    tracing::info!("{:?}", description);
-                                    tracing::info!("{:?}", updated);
-                                    tracing::info!("{:?}", logo);
-                                    tracing::info!("{:?}", icon);
-                                    tracing::info!("{:?}", entries.len());
-
-                                    tracing::info!("{:?}", links);
-                                    tracing::info!("{:?}", categories);
-                                    tracing::info!("{:?}", contributors);
-                                    tracing::info!("{:?}", published);
-                                    tracing::info!("{:?}", ttl);
-                                    tracing::info!("{:?}", generator);
-                                    tracing::info!("{:?}", language);
-                                    tracing::info!("{:?}", rating);
-                                    tracing::info!("{:?}", rights);
                                     Ok::<(), Error>(())
                                 });
                             }
@@ -256,6 +299,7 @@ fn main() -> Result<()> {
                         }
                     }
                     Message::Folder(action, folder) => {
+                        let mut conn = pool.get()?;
                         tracing::info!("{:?} {:?}", action, folder);
                         match action {
                             Action::Create => {

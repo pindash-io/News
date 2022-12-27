@@ -4,7 +4,7 @@ use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::OptionalExtension;
 
-use crate::models::{Article, Feed, Folder};
+use crate::models::{Article, Entry, Feed, FeedType, Folder, Person};
 
 pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Result<Vec<Folder>> {
     let folders = conn
@@ -266,11 +266,59 @@ pub fn update_feed(
     Ok((prev_folder_id, changed))
 }
 
+pub fn update_feed_ext(
+    conn: &mut PooledConnection<SqliteConnectionManager>,
+    Feed { id, .. }: &Feed,
+    site: &String,
+    kind: FeedType,
+    title: Option<String>,
+    description: Option<String>,
+) -> Result<()> {
+    let t = conn.transaction()?;
+
+    {
+        let mut stmt = t.prepare_cached(
+            r#"
+            UPDATE
+                feeds 
+            SET
+                site = ?1,
+                type = ?2,
+                title = ?3,
+                description = ?4
+            WHERE
+                id = ?5
+            "#,
+        )?;
+        stmt.execute(rusqlite::params![
+            site,
+            {
+                use FeedType::*;
+                match kind {
+                    Atom => "Atom",
+                    JSON => "JSON",
+                    RSS0 => "RSS0",
+                    RSS1 => "RSS1",
+                    RSS2 => "RSS2",
+                }
+            },
+            title,
+            description,
+            id
+        ])?;
+    }
+
+    t.commit()?;
+    Ok(())
+}
+
 pub fn create_articles(
     conn: &mut PooledConnection<SqliteConnectionManager>,
     Feed { id, .. }: &Feed,
-    updated: &str,
-    // feeds: &[Entry],
+    site: &String,
+    updated: Option<chrono::DateTime<chrono::Utc>>,
+    authors: Vec<Person>,
+    articles: Vec<Entry>,
 ) -> Result<()> {
     let t = conn.transaction()?;
 
@@ -279,9 +327,39 @@ pub fn create_articles(
             r#"
             INSERT INTO articles (
                 feed_id,
+                url,
                 title,
                 content,
-                author
+                created,
+                updated 
+            )
+            VALUES (
+                ?1,
+                ?2,
+                ?3,
+                ?4,
+                ?5,
+                ?6
+            )
+            ON CONFLICT(feed_id, url) DO 
+            UPDATE
+            SET
+                title = EXCLUDED.title,
+                content = EXCLUDED.content,
+                created = (CASE WHEN EXCLUDED.created > articles.created THEN EXCLUDED.created ELSE articles.created END),
+                updated = (CASE WHEN EXCLUDED.updated > articles.updated THEN EXCLUDED.updated ELSE articles.updated END) 
+            RETURNING
+                id
+            "#,
+        )?;
+
+        let mut sa = t.prepare_cached(
+            r#"
+            INSERT INTO authors (
+                feed_id,
+                name,
+                email,
+                url
             )
             VALUES (
                 ?1,
@@ -289,8 +367,98 @@ pub fn create_articles(
                 ?3,
                 ?4
             )
+            ON CONFLICT(feed_id, name) DO 
+            UPDATE
+            SET
+                name = EXCLUDED.name,
+                email = EXCLUDED.email,
+                url = EXCLUDED.url
+            RETURNING
+                id
             "#,
         )?;
+
+        let mut saa = t.prepare_cached(
+            r#"
+            INSERT INTO article_authors (
+                t,
+                a
+            )
+            VALUES (
+                ?1,
+                ?2
+            )
+            ON CONFLICT(t, a) DO 
+            NOTHING
+            "#,
+        )?;
+
+        for article in articles {
+            let published = article.published.map(|t| t.timestamp_millis()).unwrap_or(0);
+            let updated = updated.map(|t| t.timestamp_millis()).unwrap_or(published);
+            let article_id: u64 = stmt.query_row(
+                rusqlite::params![
+                    id,
+                    article
+                        .links
+                        .first()
+                        .map(|link| link.href.to_owned())
+                        // sometimes `article.id` is not a link
+                        .or(Some(article.id))
+                        .map(|path| if path.starts_with(site) {
+                            path
+                        } else {
+                            let mut url = String::new();
+                            url.push_str(site.trim_end_matches('/'));
+                            url.push('/');
+                            url.push_str(path.trim_start_matches('/'));
+                            url
+                        })
+                        .unwrap(),
+                    article.title.map(|t| t.content),
+                    article.content.map(|t| t.body),
+                    published,
+                    updated,
+                ],
+                |row| row.get(0),
+            )?;
+
+            if article.authors.is_empty() {
+                if let Some(author) = authors.first() {
+                    let author_id: u64 = sa.query_row(
+                        rusqlite::params![id, author.name, author.email, author.uri],
+                        |row| row.get(0),
+                    )?;
+                    saa.execute([article_id, author_id])?;
+                }
+            } else {
+                for author in article.authors {
+                    let author_id: u64 = sa.query_row(
+                        rusqlite::params![id, author.name, author.email, author.uri],
+                        |row| row.get(0),
+                    )?;
+                    saa.execute([article_id, author_id])?;
+                }
+            }
+        }
+    }
+
+    {
+        let mut stmt = t.prepare_cached(
+            r#"
+            UPDATE
+                feeds
+            SET
+                last_seen = ?1
+            WHERE
+                id = ?2
+            "#,
+        )?;
+
+        stmt.execute(rusqlite::params![
+            updated.map(|t| t.timestamp_millis()).unwrap_or(0),
+            id
+        ])?;
     }
 
     t.commit()?;

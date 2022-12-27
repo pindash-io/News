@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub use feed_rs::model::{Entry, FeedType, Person};
+
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
 pub struct Folder {
     pub id: u64,

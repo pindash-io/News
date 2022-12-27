@@ -4,6 +4,7 @@ use std::{
 };
 
 use eframe::{egui, emath};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     models::{Feed, Folder},
@@ -12,8 +13,7 @@ use crate::{
 
 use super::{View, Window};
 
-#[derive(Clone, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct AddWindow {
     url: String,
     name: String,
@@ -120,8 +120,7 @@ impl View for AddWindow {
     }
 }
 
-#[derive(Clone, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DeleteWindow {
     feed: Feed,
     closed: bool,
@@ -189,8 +188,7 @@ impl View for DeleteWindow {
     }
 }
 
-#[derive(Clone, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct EditWindow {
     feed: Feed,
     folder: Folder,
