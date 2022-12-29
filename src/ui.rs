@@ -134,7 +134,12 @@ impl eframe::App for App {
                             .clicked()
                         {
                             ui.close_menu();
-                            set_open(&mut self.open, windows::folder::AddWindow::NAME, true, None);
+                            set_open(
+                                &mut self.open,
+                                windows::folder::AddWindow::NAME,
+                                true,
+                                Some(Message::Normal),
+                            );
                         }
                     });
                 });

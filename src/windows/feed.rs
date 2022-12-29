@@ -19,6 +19,7 @@ pub struct AddWindow {
     name: String,
     folder: Folder,
     closed: bool,
+    autofocus: bool,
     folders: Option<Vec<Folder>>,
 }
 
@@ -41,6 +42,7 @@ impl Window for AddWindow {
     ) {
         // must
         if let Some(Message::RefreshFolders) = data.take() {
+            self.autofocus = true;
             if let Ok(reader) = store.folders.read() {
                 self.folder = reader[0].clone_without_feeds();
                 self.folders = Some(reader.to_vec());
@@ -64,7 +66,12 @@ impl View for AddWindow {
     fn ui(&mut self, ui: &mut egui::Ui, store: &Store) {
         ui.horizontal(|ui| {
             ui.add_sized((50., 24.), egui::Label::new("URL:"));
-            ui.add(egui::TextEdit::singleline(&mut self.url).hint_text("Write feed url"));
+            let resp =
+                ui.add(egui::TextEdit::singleline(&mut self.url).hint_text("Write feed url"));
+            if self.autofocus {
+                self.autofocus = false;
+                ui.memory().request_focus(resp.id);
+            }
         });
         ui.end_row();
         ui.horizontal(|ui| {
@@ -193,6 +200,7 @@ pub struct EditWindow {
     feed: Feed,
     folder: Folder,
     closed: bool,
+    autofocus: bool,
     folders: Option<Vec<Folder>>,
 }
 
@@ -215,6 +223,7 @@ impl Window for EditWindow {
     ) {
         // must
         if let Some(Message::Feed(_, feed)) = data.take() {
+            self.autofocus = true;
             let folder_id = feed.folder_id;
             self.feed = feed;
             if let Ok(reader) = store.folders.read() {
@@ -245,7 +254,12 @@ impl View for EditWindow {
     fn ui(&mut self, ui: &mut egui::Ui, store: &Store) {
         ui.horizontal(|ui| {
             ui.add_sized((50., 24.), egui::Label::new("URL:"));
-            ui.add(egui::TextEdit::singleline(&mut self.feed.url).hint_text("Write feed url"));
+            let resp =
+                ui.add(egui::TextEdit::singleline(&mut self.feed.url).hint_text("Write feed url"));
+            if self.autofocus {
+                self.autofocus = false;
+                ui.memory().request_focus(resp.id);
+            }
         });
         ui.end_row();
         ui.horizontal(|ui| {

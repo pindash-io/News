@@ -14,6 +14,7 @@ use super::{View, Window};
 pub struct AddWindow {
     name: String,
     closed: bool,
+    autofocus: bool,
 }
 
 impl AddWindow {
@@ -31,8 +32,11 @@ impl Window for AddWindow {
         ctx: &egui::Context,
         open: &mut bool,
         size: egui::Vec2,
-        _data: Option<Message>,
+        data: Option<Message>,
     ) {
+        if let Some(Message::Normal) = data {
+            self.autofocus = true;
+        }
         self.closed = false;
         egui::Window::new(self.name())
             .resizable(false)
@@ -51,8 +55,14 @@ impl View for AddWindow {
     fn ui(&mut self, ui: &mut egui::Ui, store: &Store) {
         ui.horizontal(|ui| {
             ui.add_sized((50., 24.), egui::Label::new("Name:"));
-            ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Write folder name"));
+            let resp =
+                ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Write folder name"));
+            if self.autofocus {
+                self.autofocus = false;
+                ui.memory().request_focus(resp.id);
+            }
         });
+
         ui.end_row();
 
         ui.with_layout(
@@ -147,9 +157,10 @@ impl View for DeleteWindow {
 
 #[derive(Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct EditWindow {
-    folder: Folder,
     name: String,
+    folder: Folder,
     closed: bool,
+    autofocus: bool,
 }
 
 impl EditWindow {
@@ -170,6 +181,7 @@ impl Window for EditWindow {
         mut data: Option<Message>,
     ) {
         if let Some(Message::Folder(_, folder)) = data.take() {
+            self.autofocus = true;
             self.name = folder.name.clone();
             self.folder = folder;
         }
@@ -192,7 +204,12 @@ impl View for EditWindow {
     fn ui(&mut self, ui: &mut egui::Ui, store: &Store) {
         ui.horizontal(|ui| {
             ui.add_sized((50., 24.), egui::Label::new("Name:"));
-            ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Write folder name"));
+            let resp =
+                ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Write folder name"));
+            if self.autofocus {
+                self.autofocus = false;
+                ui.memory().request_focus(resp.id);
+            }
         });
         ui.end_row();
 

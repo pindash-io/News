@@ -17,6 +17,9 @@ pub struct Feed {
     pub url: String,
     pub last_seen: i64,
     pub folder_id: u64,
+    /// true: loading, false not loading
+    #[serde(default)]
+    pub status: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
@@ -45,6 +48,7 @@ impl Feed {
             url,
             folder_id,
             last_seen: 0,
+            status: false,
         }
     }
 }
