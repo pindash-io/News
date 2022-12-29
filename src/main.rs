@@ -10,11 +10,13 @@ use std::{
         Arc, RwLock,
     },
     thread,
+    time::Duration,
 };
 
 use anyhow::{Error, Result};
 use eframe::egui;
 use image::EncodableLayout;
+use once_cell::sync::Lazy;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, OpenFlags};
@@ -23,6 +25,13 @@ use rusqlite_migration::{Migrations, M};
 use pindash_news::*;
 
 const APP_NAME: &str = "PinDash News";
+
+static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("Cant build a reqwest client")
+});
 
 fn main() -> Result<()> {
     // Log to stdout (if you run with `RUST_LOG=debug`).
@@ -214,7 +223,7 @@ fn main() -> Result<()> {
                             Action::Fetch => {
                                 let feed = feed.to_owned();
                                 tokio::task::spawn(async move {
-                                    let data = reqwest::get(&feed.url).await?.bytes().await?;
+                                    let data = CLIENT.get(&feed.url).send().await?.bytes().await?;
                                     let feed_rs::model::Feed {
                                         id,
                                         feed_type,
