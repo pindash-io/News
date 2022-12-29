@@ -316,7 +316,7 @@ pub fn create_articles(
     conn: &mut PooledConnection<SqliteConnectionManager>,
     Feed { id, .. }: &Feed,
     site: &String,
-    updated: Option<chrono::DateTime<chrono::Utc>>,
+    updated: i64,
     authors: Vec<Person>,
     articles: Vec<Entry>,
 ) -> Result<()> {
@@ -394,8 +394,14 @@ pub fn create_articles(
         )?;
 
         for article in articles {
-            let published = article.published.map(|t| t.timestamp_millis()).unwrap_or(0);
-            let updated = updated.map(|t| t.timestamp_millis()).unwrap_or(published);
+            let published = article
+                .published
+                .map(|t| t.timestamp_millis())
+                .unwrap_or(updated);
+            let updated = article
+                .updated
+                .map(|t| t.timestamp_millis())
+                .unwrap_or(published);
             let article_id: u64 = stmt.query_row(
                 rusqlite::params![
                     id,
@@ -455,10 +461,7 @@ pub fn create_articles(
             "#,
         )?;
 
-        stmt.execute(rusqlite::params![
-            updated.map(|t| t.timestamp_millis()).unwrap_or(0),
-            id
-        ])?;
+        stmt.execute(rusqlite::params![updated, id])?;
     }
 
     t.commit()?;

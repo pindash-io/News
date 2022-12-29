@@ -246,6 +246,21 @@ fn main() -> Result<()> {
                                         // generator,
                                     } = feed_rs::parser::parse(data.as_ref())?;
 
+                                    let updated = updated
+                                        .or_else(|| {
+                                            entries.first().and_then(|e| e.updated.or(e.published))
+                                        })
+                                        .unwrap_or(chrono::Utc::now())
+                                        .timestamp_millis();
+
+                                    let flag = updated <= feed.last_seen;
+
+                                    tracing::info!("{}: has new entries, {}", feed.name, !flag);
+
+                                    if flag {
+                                        return Ok::<(), Error>(());
+                                    }
+
                                     let site = links
                                         .iter()
                                         .find_map(|link| {
@@ -291,14 +306,7 @@ fn main() -> Result<()> {
                                     )?;
 
                                     db::create_articles(
-                                        &mut conn,
-                                        &feed,
-                                        &site,
-                                        updated.or_else(|| {
-                                            entries.first().and_then(|e| e.updated.or(e.published))
-                                        }),
-                                        authors,
-                                        entries,
+                                        &mut conn, &feed, &site, updated, authors, entries,
                                     )?;
 
                                     Ok::<(), Error>(())

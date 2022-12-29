@@ -15,7 +15,7 @@ pub struct Feed {
     pub id: u64,
     pub name: String,
     pub url: String,
-    pub last_seen: u64,
+    pub last_seen: i64,
     pub folder_id: u64,
 }
 
@@ -32,8 +32,8 @@ pub struct Article {
     pub url: String,
     pub title: String,
     pub content: String,
-    pub published: u64,
-    pub created: u64,
+    pub published: i64,
+    pub created: i64,
     pub authors: Vec<Author>,
 }
 
