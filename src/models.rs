@@ -20,6 +20,8 @@ pub struct Feed {
     /// true: loading, false not loading
     #[serde(default)]
     pub status: bool,
+    #[serde(default)]
+    pub articles: Option<Vec<Article>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq, Eq)]
@@ -35,9 +37,11 @@ pub struct Article {
     pub url: String,
     pub title: String,
     pub content: String,
-    pub published: i64,
+    /// published
     pub created: i64,
-    pub authors: Vec<Author>,
+    pub updated: i64,
+    #[serde(default)]
+    pub authors: Option<Vec<Author>>,
 }
 
 impl Feed {
@@ -49,6 +53,7 @@ impl Feed {
             folder_id,
             last_seen: 0,
             status: false,
+            articles: None,
         }
     }
 }

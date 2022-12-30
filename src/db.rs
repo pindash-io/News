@@ -41,21 +41,25 @@ pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Re
             SELECT
                 d.id,
                 d.name,
-                (CASE count(f.d)
-                WHEN 0 THEN NULL
-                ELSE json_group_array(json_object(
-                    'id',
-                    f.id,
-                    'name',
-                    f.name,
-                    'url',
-                    f.url,
-                    'last_seen',
-                    f.last_seen,
-                    'folder_id',
-                    d.id
-                ))
-            END) AS feeds
+                (
+                    CASE count(f.d)
+                    WHEN 0 THEN NULL
+                    ELSE json_group_array(
+                        json_object(
+                            'id',
+                            f.id,
+                            'name',
+                            f.name,
+                            'url',
+                            f.url,
+                            'last_seen',
+                            f.last_seen,
+                            'folder_id',
+                            d.id
+                        )
+                    )
+                    END
+                ) AS feeds
             FROM
                 d
             LEFT JOIN
@@ -318,7 +322,7 @@ pub fn create_articles(
     site: &String,
     updated: i64,
     authors: Vec<Person>,
-    articles: Vec<Entry>,
+    mut articles: Vec<Entry>,
 ) -> Result<()> {
     let t = conn.transaction()?;
 
@@ -346,8 +350,8 @@ pub fn create_articles(
             SET
                 title = EXCLUDED.title,
                 content = EXCLUDED.content,
-                created = (CASE WHEN EXCLUDED.created > articles.created THEN EXCLUDED.created ELSE articles.created END),
-                updated = (CASE WHEN EXCLUDED.updated > articles.updated THEN EXCLUDED.updated ELSE articles.updated END) 
+                created = ifnull(EXCLUDED.created, articles.created),
+                updated = ifnull(EXCLUDED.updated, ifnull(articles.updated, articles.created))
             RETURNING
                 id
             "#,
@@ -393,15 +397,14 @@ pub fn create_articles(
             "#,
         )?;
 
+        articles.reverse();
+
         for article in articles {
-            let published = article
+            let updated = article.updated.map(|t| t.timestamp_millis());
+            let created = article
                 .published
                 .map(|t| t.timestamp_millis())
-                .unwrap_or(updated);
-            let updated = article
-                .updated
-                .map(|t| t.timestamp_millis())
-                .unwrap_or(published);
+                .or_else(|| updated);
             let article_id: u64 = stmt.query_row(
                 rusqlite::params![
                     id,
@@ -422,8 +425,11 @@ pub fn create_articles(
                         })
                         .unwrap(),
                     article.title.map(|t| t.content),
-                    article.content.map(|t| t.body),
-                    published,
+                    article
+                        .content
+                        .and_then(|t| t.body)
+                        .or_else(|| article.summary.map(|t| t.content)),
+                    created,
                     updated,
                 ],
                 |row| row.get(0),
@@ -466,4 +472,85 @@ pub fn create_articles(
 
     t.commit()?;
     Ok(())
+}
+
+pub fn find_articles_by_feed(
+    conn: &mut PooledConnection<SqliteConnectionManager>,
+    feed: &Feed,
+) -> Result<Vec<Article>> {
+    let articles = conn
+        .prepare_cached(
+            r#"
+            SELECT
+                id,
+                url,
+                title,
+                content,
+                created,
+                updated,
+                feed_id,
+                (
+                    SELECT 
+                        (CASE count(a.id)
+                        WHEN 0 THEN NULL
+                        ELSE json_group_array(
+                            json_object(
+                                'id',
+                                a.id,
+                                'name',
+                                a.name
+                            )
+                        )
+                        END)
+                    FROM
+                        authors as a
+                    JOIN
+                        article_authors AS aa
+                    ON
+                        aa.a = a.id
+                    AND
+                        aa.t = t.id
+                    GROUP BY
+                        aa.t
+                    ORDER BY
+                        aa.a
+                ) AS authors
+            FROM
+                articles AS t
+            WHERE
+                feed_id = ?1
+            AND
+                updated > ?2
+            ORDER BY
+                updated,
+                id
+            "#,
+        )?
+        .query_map(
+            rusqlite::params![
+                feed.id,
+                feed.articles
+                    .as_ref()
+                    .and_then(|articles| articles.last())
+                    .map(|a| a.updated)
+                    .unwrap_or(0)
+            ],
+            |row| {
+                Ok(Article {
+                    id: row.get(0)?,
+                    url: row.get(1)?,
+                    title: row.get(2)?,
+                    content: row.get(3)?,
+                    created: row.get(4)?,
+                    updated: row.get(5)?,
+                    feed_id: row.get(6)?,
+                    authors: row
+                        .get::<_, Option<serde_json::Value>>(7)?
+                        .and_then(|v| serde_json::from_value(v).ok()),
+                })
+            },
+        )
+        .map(|rows| rows.filter_map(Result::ok).collect::<Vec<_>>())?;
+
+    Ok(articles)
 }

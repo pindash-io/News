@@ -128,20 +128,13 @@ fn main() -> Result<()> {
                             Action::Create => {
                                 db::create_feed(&mut conn, feed).ok().and_then(|id| {
                                     folders_writer.write().ok().and_then(|mut folders| {
-                                        folders
-                                            .iter_mut()
-                                            .find_map(|f| {
-                                                if f.id == feed.folder_id {
-                                                    Some(f)
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .map(|f| {
+                                        folders.iter_mut().find(|f| f.id == feed.folder_id).map(
+                                            |f| {
                                                 let mut feed = feed.to_owned();
                                                 feed.id = id;
                                                 f.feeds.get_or_insert_with(Vec::new).push(feed)
-                                            })
+                                            },
+                                        )
                                     })
                                 });
                             }
@@ -155,25 +148,15 @@ fn main() -> Result<()> {
                                                 if changed > 0 {
                                                     folders
                                                         .iter_mut()
-                                                        .find_map(|f| {
-                                                            if f.id == feed.folder_id {
-                                                                Some(f)
-                                                            } else {
-                                                                None
-                                                            }
-                                                        })
+                                                        .find(|f| f.id == feed.folder_id)
                                                         .and_then(|f| f.feeds.as_mut())
                                                         .and_then(|feeds| {
-                                                            feeds.iter_mut().find_map(|s| {
-                                                                if s.id == feed.id {
-                                                                    Some(s)
-                                                                } else {
-                                                                    None
-                                                                }
-                                                            })
+                                                            feeds
+                                                                .iter_mut()
+                                                                .find(|f| f.id == feed.id)
                                                         })
-                                                        .map(|s| {
-                                                            *s = feed.to_owned();
+                                                        .map(|f| {
+                                                            *f = feed.to_owned();
                                                         });
                                                 }
                                             } else {
@@ -187,7 +170,7 @@ fn main() -> Result<()> {
                                                         if f.id == prev_folder_id {
                                                             // delete from prev folder
                                                             f.feeds.as_mut().map(|feeds| {
-                                                                feeds.retain(|s| s.id != feed.id)
+                                                                feeds.retain(|f| f.id != feed.id)
                                                             });
                                                         } else {
                                                             // push to new folder
@@ -206,24 +189,59 @@ fn main() -> Result<()> {
                                     folders_writer.write().ok().and_then(|mut folders| {
                                         folders
                                             .iter_mut()
-                                            .find_map(|f| {
-                                                if f.id == feed.folder_id {
-                                                    Some(f)
-                                                } else {
-                                                    None
-                                                }
-                                            })
+                                            .find(|f| f.id == feed.folder_id)
                                             .and_then(|f| f.feeds.as_mut())
-                                            .map(|feeds| {
-                                                feeds.retain(|s| s.id != feed.id);
-                                            })
+                                            .map(|feeds| feeds.retain(|f| f.id != feed.id))
                                     })
                                 });
                             }
                             Action::Fetch => {
                                 let feed = feed.to_owned();
+                                // if feed is fetching data, pass
+                                if feed.status {
+                                    continue;
+                                }
+                                let folder_id = feed.folder_id;
+                                let feed_id = feed.id;
+                                let url = feed.url.clone();
+
+                                folders_writer.write().ok().and_then(|mut folders| {
+                                    folders
+                                        .iter_mut()
+                                        .find(|f| f.id == folder_id)
+                                        .and_then(|f| f.feeds.as_mut())
+                                        .and_then(|feeds| {
+                                            feeds.iter_mut().find(|f| f.id == feed_id)
+                                        })
+                                        .map(|f| f.status = true)
+                                });
+
+                                let folders_writer = folders_writer.clone();
                                 tokio::task::spawn(async move {
-                                    let data = CLIENT.get(&feed.url).send().await?.bytes().await?;
+                                    let Some(data) = async move {
+                                        let result = CLIENT.get(&url).send().await;
+                                        let mut data = None;
+                                        if let Ok(resp) = result {
+                                            data = resp.bytes().await.ok();
+                                        }
+
+                                        folders_writer.write().ok().and_then(|mut folders| {
+                                            folders
+                                                .iter_mut()
+                                                .find(|f| f.id == folder_id)
+                                                .and_then(|f| f.feeds.as_mut())
+                                                .and_then(|feeds| {
+                                                    feeds.iter_mut().find(|f| f.id == feed_id)
+                                                })
+                                                .map(|f| f.status = false)
+                                        });
+
+                                        data
+                                    }
+                                    .await else {
+                                        return Ok::<(), Error>(());
+                                    };
+
                                     let feed_rs::model::Feed {
                                         id,
                                         feed_type,
@@ -250,12 +268,18 @@ fn main() -> Result<()> {
                                         .or_else(|| {
                                             entries.first().and_then(|e| e.updated.or(e.published))
                                         })
-                                        .unwrap_or(chrono::Utc::now())
+                                        .unwrap_or_else(chrono::Utc::now)
                                         .timestamp_millis();
 
                                     let flag = updated <= feed.last_seen;
 
-                                    tracing::info!("{}: has new entries, {}", feed.name, !flag);
+                                    tracing::info!(
+                                        "{}: has new entries {}, last_seen = {}, updated = {}",
+                                        feed.name,
+                                        !flag,
+                                        feed.last_seen,
+                                        updated
+                                    );
 
                                     if flag {
                                         return Ok::<(), Error>(());
