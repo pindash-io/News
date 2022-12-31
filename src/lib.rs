@@ -31,7 +31,7 @@ pub enum Message {
 pub struct Store {
     pub sender: Sender<Message>,
     pub folders: Arc<RwLock<Vec<models::Folder>>>,
-    pub feeds: Arc<RwLock<HashMap<u64, Vec<models::Feed>>>>,
+    // pub feeds: Arc<RwLock<HashMap<u64, Vec<models::Feed>>>>,
 }
 
 impl Store {
@@ -39,7 +39,7 @@ impl Store {
         Self {
             sender,
             folders,
-            feeds: Arc::default(),
+            // feeds: Arc::default(),
         }
     }
 }

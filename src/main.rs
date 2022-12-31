@@ -27,8 +27,25 @@ use pindash_news::*;
 const APP_NAME: &str = "PinDash News";
 
 static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    use reqwest::header;
+    let mut headers = header::HeaderMap::new();
+    // headers.insert(
+    //     "Cache-Control",
+    //     header::HeaderValue::from_static("max-age=0"),
+    // );
+    // headers.insert("Connection", header::HeaderValue::from_static("keep-alive"));
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
+        // Cache-Control: max-age=0
+        // Connection: keep-alive
+        // .timeout(Duration::from_secs(10))
+        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
+        .default_headers(headers)
+        // .use_native_tls()
+        .trust_dns(true)
+        .gzip(true)
+        .deflate(true)
+        .brotli(true)
+        .timeout(Duration::from_secs(60))
         .build()
         .expect("Cant build a reqwest client")
 });
@@ -197,13 +214,17 @@ fn main() -> Result<()> {
                             }
                             Action::Fetch => {
                                 let feed = feed.to_owned();
-                                // if feed is fetching data, pass
+                                // if `fetching` or `inserting`, pass
                                 if feed.status {
                                     continue;
                                 }
                                 let folder_id = feed.folder_id;
                                 let feed_id = feed.id;
-                                let url = feed.url.clone();
+
+                                let mut articles = None;
+                                if feed.articles.is_none() {
+                                    articles = db::find_articles_by_feed(&mut conn, &feed).ok();
+                                }
 
                                 folders_writer.write().ok().and_then(|mut folders| {
                                     folders
@@ -213,9 +234,17 @@ fn main() -> Result<()> {
                                         .and_then(|feeds| {
                                             feeds.iter_mut().find(|f| f.id == feed_id)
                                         })
-                                        .map(|f| f.status = true)
+                                        .map(|f| {
+                                            f.status = true;
+                                            if let Some(a) = f.articles.as_mut() {
+                                                a.extend_from_slice(&articles.unwrap_or_default());
+                                            } else {
+                                                f.articles = articles;
+                                            }
+                                        })
                                 });
 
+                                let url = feed.url.clone();
                                 let folders_writer = folders_writer.clone();
                                 tokio::task::spawn(async move {
                                     let Some(data) = async move {
@@ -224,8 +253,11 @@ fn main() -> Result<()> {
                                         if let Ok(resp) = result {
                                             data = resp.bytes().await.ok();
                                         }
-
-                                        folders_writer.write().ok().and_then(|mut folders| {
+                                        data
+                                    }
+                                    .await else {
+                                        tracing::info!("Feeds fetch failed");
+                                        folders_writer.write().ok().map(|mut folders| {
                                             folders
                                                 .iter_mut()
                                                 .find(|f| f.id == folder_id)
@@ -235,11 +267,7 @@ fn main() -> Result<()> {
                                                 })
                                                 .map(|f| f.status = false)
                                         });
-
-                                        data
-                                    }
-                                    .await else {
-                                        return Ok::<(), Error>(());
+                                        return Ok::<(), Error>(())
                                     };
 
                                     let feed_rs::model::Feed {
@@ -247,7 +275,7 @@ fn main() -> Result<()> {
                                         feed_type,
                                         title,
                                         description,
-                                        entries,
+                                        mut entries,
                                         updated,
                                         authors,
                                         links,
@@ -320,18 +348,46 @@ fn main() -> Result<()> {
                                                 .to_string()
                                         });
 
-                                    db::update_feed_ext(
+                                    let updated = db::update_feed_ext_and_upsert_articles(
                                         &mut conn,
                                         &feed,
                                         &site,
                                         feed_type,
                                         title.map(|t| t.content),
                                         description.map(|t| t.content),
+                                        updated,
+                                        authors,
+                                        {
+                                            // insert, order by asc
+                                            entries.reverse();
+                                            entries
+                                        },
                                     )?;
 
-                                    db::create_articles(
-                                        &mut conn, &feed, &site, updated, authors, entries,
-                                    )?;
+                                    let articles = db::find_articles_by_feed(&mut conn, &feed).ok();
+
+                                    folders_writer.write().ok().map(|mut folders| {
+                                        folders
+                                            .iter_mut()
+                                            .find(|f| f.id == folder_id)
+                                            .and_then(|f| f.feeds.as_mut())
+                                            .and_then(|feeds| {
+                                                feeds.iter_mut().find(|f| f.id == feed_id)
+                                            })
+                                            .map(|f| {
+                                                f.status = false;
+                                                f.last_seen = updated;
+                                                if let Some(a) = f.articles.as_mut() {
+                                                    a.extend_from_slice(
+                                                        &articles.unwrap_or_default(),
+                                                    );
+                                                } else {
+                                                    f.articles = articles;
+                                                }
+                                            })
+                                    });
+
+                                    tracing::info!("{site}: fetched feeds");
 
                                     Ok::<(), Error>(())
                                 });

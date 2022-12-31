@@ -270,9 +270,25 @@ pub fn update_feed(
     Ok((prev_folder_id, changed))
 }
 
-pub fn update_feed_ext(
+pub fn update_feed_ext_and_upsert_articles(
     conn: &mut PooledConnection<SqliteConnectionManager>,
     Feed { id, .. }: &Feed,
+    site: &String,
+    kind: FeedType,
+    title: Option<String>,
+    description: Option<String>,
+    updated: i64,
+    authors: Vec<Person>,
+    articles: Vec<Entry>,
+) -> Result<i64> {
+    update_feed_ext(conn, id, site, kind, title, description)?;
+
+    upsert_articles(conn, id, site, updated, authors, articles)
+}
+
+fn update_feed_ext(
+    conn: &mut PooledConnection<SqliteConnectionManager>,
+    id: &u64,
     site: &String,
     kind: FeedType,
     title: Option<String>,
@@ -316,14 +332,14 @@ pub fn update_feed_ext(
     Ok(())
 }
 
-pub fn create_articles(
+fn upsert_articles(
     conn: &mut PooledConnection<SqliteConnectionManager>,
-    Feed { id, .. }: &Feed,
+    id: &u64,
     site: &String,
-    updated: i64,
+    feed_updated: i64,
     authors: Vec<Person>,
-    mut articles: Vec<Entry>,
-) -> Result<()> {
+    articles: Vec<Entry>,
+) -> Result<i64> {
     let t = conn.transaction()?;
 
     {
@@ -397,14 +413,20 @@ pub fn create_articles(
             "#,
         )?;
 
-        articles.reverse();
-
         for article in articles {
             let updated = article.updated.map(|t| t.timestamp_millis());
             let created = article
                 .published
                 .map(|t| t.timestamp_millis())
-                .or_else(|| updated);
+                .or_else(|| updated)
+                .unwrap_or(feed_updated);
+
+            let updated = if let Some(updated) = updated {
+                updated
+            } else {
+                created
+            };
+
             let article_id: u64 = stmt.query_row(
                 rusqlite::params![
                     id,
@@ -467,11 +489,11 @@ pub fn create_articles(
             "#,
         )?;
 
-        stmt.execute(rusqlite::params![updated, id])?;
+        stmt.execute(rusqlite::params![feed_updated, id])?;
     }
 
     t.commit()?;
-    Ok(())
+    Ok(feed_updated)
 }
 
 pub fn find_articles_by_feed(

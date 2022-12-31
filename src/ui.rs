@@ -17,6 +17,8 @@ pub struct App {
     store: Store,
 
     feed: models::Feed,
+
+    article: models::Article,
 }
 
 impl App {
@@ -76,6 +78,7 @@ impl App {
             windows,
             open,
             feed: models::Feed::default(),
+            article: models::Article::default(),
         }
     }
 
@@ -98,6 +101,10 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.windows(ctx, frame.info().window_info.size);
+
+        let Store {
+            folders, sender, ..
+        } = &self.store;
 
         egui::TopBottomPanel::top("Navbar")
             // .exact_height(38.)
@@ -165,9 +172,7 @@ impl eframe::App for App {
                         let folder_img = self.icons.get("folder").unwrap();
                         let link_img = self.icons.get("link").unwrap();
                         let open = &mut self.open;
-                        let current_feed= &mut self.feed;
-                        let Store { folders, sender, .. } = &self.store;
-
+                        let current_feed = &mut self.feed;
                         // fn circle_icon(ui: &mut egui::Ui, openness: f32, response: &egui::Response) {
                         //     let stroke = ui.style().interact(&response).fg_stroke;
                         //     let radius = egui::lerp(2.0..=3.0, openness);
@@ -338,7 +343,33 @@ impl eframe::App for App {
                         .show_viewport(ui, |ui, rect| {
                             ui.set_width(rect.width());
                             ui.set_height(rect.height());
-                            ui.label("left");
+
+                            ui.with_layout(
+                                egui::Layout::top_down_justified(egui::Align::LEFT),
+                                |ui| {
+                                    let current_article = &mut self.article;
+                                    let models::Feed { id, folder_id, .. } = self.feed;
+                                    if let Ok(folders) = folders.try_read() {
+                                        folders
+                                            .iter()
+                                            .find(|folder| folder.id == folder_id)
+                                            .and_then(|folder| folder.feeds.as_ref())
+                                            .and_then(|feeds| {
+                                                feeds.iter().find(|feed| feed.id == id)
+                                            })
+                                            .and_then(|feed| feed.articles.as_ref())
+                                            .map(|articles| {
+                                                articles.iter().rev().for_each(|article| {
+                                                    ui.selectable_value(
+                                                        &mut current_article.id,
+                                                        article.id,
+                                                        article.title.to_string(),
+                                                    );
+                                                })
+                                            });
+                                    }
+                                },
+                            );
                         });
                 });
 
