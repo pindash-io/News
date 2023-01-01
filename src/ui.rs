@@ -303,11 +303,16 @@ impl eframe::App for App {
                                                         .changed()
                                                     {
                                                         *current_feed = feed.clone();
+                                                        let mut f = models::Feed::new(feed.url.to_owned(), feed.name.to_owned(), feed.folder_id);
+                                                        f.id = feed.id;
+                                                        f.status = feed.status;
+                                                        f.last_seen = feed.last_seen;
+                                                        f.articles = feed.articles.is_some().then(Vec::new);
                                                         if let Err(e) = sender.send(Message::Feed (
                                                             Action::Fetch,
-                                                            feed.clone(),
+                                                            f
                                                         )) {
-                                                            tracing::error!("{}", e);
+                                                            tracing::error!("{e}");
                                                         }
                                                     }
                                                 });
@@ -339,7 +344,9 @@ impl eframe::App for App {
                 .width_range(128.0..=360.)
                 .show_inside(ui, |ui| {
                     egui::ScrollArea::vertical()
-                        .auto_shrink([false; 2])
+                        // .auto_shrink([true; 2])
+                        // .stick_to_bottom(true)
+                        // .stick_to_right(true)
                         .show_viewport(ui, |ui, rect| {
                             ui.set_width(rect.width());
                             ui.set_height(rect.height());

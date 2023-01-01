@@ -213,7 +213,7 @@ fn main() -> Result<()> {
                                 });
                             }
                             Action::Fetch => {
-                                let feed = feed.to_owned();
+                                let mut feed = feed.to_owned();
                                 // if `fetching` or `inserting`, pass
                                 if feed.status {
                                     continue;
@@ -221,10 +221,12 @@ fn main() -> Result<()> {
                                 let folder_id = feed.folder_id;
                                 let feed_id = feed.id;
 
-                                let mut articles = None;
-                                if feed.articles.is_none() {
-                                    articles = db::find_articles_by_feed(&mut conn, &feed).ok();
-                                }
+                                // first fetch
+                                let articles = feed
+                                    .articles
+                                    .is_none()
+                                    .then(|| db::find_articles_by_feed(&mut conn, &feed).ok())
+                                    .flatten();
 
                                 folders_writer.write().ok().and_then(|mut folders| {
                                     folders
@@ -235,12 +237,18 @@ fn main() -> Result<()> {
                                             feeds.iter_mut().find(|f| f.id == feed_id)
                                         })
                                         .map(|f| {
-                                            f.status = true;
-                                            if let Some(a) = f.articles.as_mut() {
-                                                a.extend_from_slice(&articles.unwrap_or_default());
-                                            } else {
+                                            if articles.as_ref().filter(|a| !a.is_empty()).is_some()
+                                                && f.articles.is_none()
+                                            {
+                                                f.last_seen = articles
+                                                    .as_ref()
+                                                    .and_then(|a| a.last())
+                                                    .map(|a| a.created)
+                                                    .unwrap();
                                                 f.articles = articles;
+                                                feed.last_seen = f.last_seen;
                                             }
+                                            f.status = true;
                                         })
                                 });
 
@@ -276,6 +284,7 @@ fn main() -> Result<()> {
                                         title,
                                         description,
                                         mut entries,
+                                        published,
                                         updated,
                                         authors,
                                         links,
@@ -292,24 +301,35 @@ fn main() -> Result<()> {
                                         // generator,
                                     } = feed_rs::parser::parse(data.as_ref())?;
 
-                                    let updated = updated
-                                        .or_else(|| {
-                                            entries.first().and_then(|e| e.updated.or(e.published))
-                                        })
-                                        .unwrap_or_else(chrono::Utc::now)
-                                        .timestamp_millis();
+                                    let published = entries
+                                        .first()
+                                        .and_then(|e| e.published.or(e.updated))
+                                        .or(published)
+                                        .or(updated)
+                                        .map(|t| t.timestamp_millis())
+                                        .unwrap_or(feed.last_seen);
 
-                                    let flag = updated <= feed.last_seen;
+                                    let flag = published > feed.last_seen;
 
                                     tracing::info!(
-                                        "{}: has new entries {}, last_seen = {}, updated = {}",
+                                        "{}: has new entries {}, last_seen = {}, published = {}",
                                         feed.name,
-                                        !flag,
+                                        flag,
                                         feed.last_seen,
-                                        updated
+                                        published
                                     );
 
-                                    if flag {
+                                    if !flag {
+                                        folders_writer.write().ok().map(|mut folders| {
+                                            folders
+                                                .iter_mut()
+                                                .find(|f| f.id == folder_id)
+                                                .and_then(|f| f.feeds.as_mut())
+                                                .and_then(|feeds| {
+                                                    feeds.iter_mut().find(|f| f.id == feed_id)
+                                                })
+                                                .map(|f| f.status = false)
+                                        });
                                         return Ok::<(), Error>(());
                                     }
 
@@ -348,14 +368,14 @@ fn main() -> Result<()> {
                                                 .to_string()
                                         });
 
-                                    let updated = db::update_feed_ext_and_upsert_articles(
+                                    let published = db::update_feed_ext_and_upsert_articles(
                                         &mut conn,
                                         &feed,
                                         &site,
                                         feed_type,
                                         title.map(|t| t.content),
                                         description.map(|t| t.content),
-                                        updated,
+                                        published,
                                         authors,
                                         {
                                             // insert, order by asc
@@ -375,8 +395,6 @@ fn main() -> Result<()> {
                                                 feeds.iter_mut().find(|f| f.id == feed_id)
                                             })
                                             .map(|f| {
-                                                f.status = false;
-                                                f.last_seen = updated;
                                                 if let Some(a) = f.articles.as_mut() {
                                                     a.extend_from_slice(
                                                         &articles.unwrap_or_default(),
@@ -384,10 +402,12 @@ fn main() -> Result<()> {
                                                 } else {
                                                     f.articles = articles;
                                                 }
+                                                f.last_seen = published;
+                                                f.status = false;
                                             })
                                     });
 
-                                    tracing::info!("{site}: fetched feeds");
+                                    tracing::info!("{site}: fetched feeds {published}");
 
                                     Ok::<(), Error>(())
                                 });

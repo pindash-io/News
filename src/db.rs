@@ -277,13 +277,13 @@ pub fn update_feed_ext_and_upsert_articles(
     kind: FeedType,
     title: Option<String>,
     description: Option<String>,
-    updated: i64,
+    published: i64,
     authors: Vec<Person>,
     articles: Vec<Entry>,
 ) -> Result<i64> {
     update_feed_ext(conn, id, site, kind, title, description)?;
 
-    upsert_articles(conn, id, site, updated, authors, articles)
+    upsert_articles(conn, id, site, published, authors, articles)
 }
 
 fn update_feed_ext(
@@ -336,7 +336,7 @@ fn upsert_articles(
     conn: &mut PooledConnection<SqliteConnectionManager>,
     id: &u64,
     site: &String,
-    feed_updated: i64,
+    feed_published: i64,
     authors: Vec<Person>,
     articles: Vec<Entry>,
 ) -> Result<i64> {
@@ -415,16 +415,16 @@ fn upsert_articles(
 
         for article in articles {
             let updated = article.updated.map(|t| t.timestamp_millis());
-            let created = article
+            let published = article
                 .published
                 .map(|t| t.timestamp_millis())
                 .or_else(|| updated)
-                .unwrap_or(feed_updated);
+                .unwrap_or(feed_published);
 
             let updated = if let Some(updated) = updated {
                 updated
             } else {
-                created
+                published
             };
 
             let article_id: u64 = stmt.query_row(
@@ -451,7 +451,7 @@ fn upsert_articles(
                         .content
                         .and_then(|t| t.body)
                         .or_else(|| article.summary.map(|t| t.content)),
-                    created,
+                    published,
                     updated,
                 ],
                 |row| row.get(0),
@@ -489,11 +489,11 @@ fn upsert_articles(
             "#,
         )?;
 
-        stmt.execute(rusqlite::params![feed_updated, id])?;
+        stmt.execute(rusqlite::params![feed_published, id])?;
     }
 
     t.commit()?;
-    Ok(feed_updated)
+    Ok(feed_published)
 }
 
 pub fn find_articles_by_feed(
@@ -544,7 +544,6 @@ pub fn find_articles_by_feed(
             AND
                 updated > ?2
             ORDER BY
-                updated,
                 id
             "#,
         )?
@@ -553,9 +552,10 @@ pub fn find_articles_by_feed(
                 feed.id,
                 feed.articles
                     .as_ref()
-                    .and_then(|articles| articles.last())
-                    .map(|a| a.updated)
-                    .unwrap_or(0)
+                    .filter(|a| a.is_empty())
+                    .is_none()
+                    .then_some(0)
+                    .unwrap_or(feed.last_seen)
             ],
             |row| {
                 Ok(Article {
