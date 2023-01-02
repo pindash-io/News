@@ -446,7 +446,7 @@ fn upsert_articles(
                             url
                         })
                         .unwrap(),
-                    article.title.map(|t| t.content),
+                    article.title.map(|t| t.content.trim().to_owned()),
                     article
                         .content
                         .and_then(|t| t.body)
