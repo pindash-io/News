@@ -41,4 +41,5 @@ tracing-subscriber = "0.3.16"
 feed-rs = { version = "1.2.0", git = "https://github.com/fundon/feed-rs.git", rev = "5d1d126" }
 chrono = { version = "0.4.23", default-features = false, features = ["clock"] }
 url = "2.3.1"
+open = "3.2.0"
 # egui_dnd = "0.1.0"

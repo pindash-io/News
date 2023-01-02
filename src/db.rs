@@ -551,8 +551,6 @@ pub fn find_articles_by_feed(
             rusqlite::params![
                 feed.id,
                 feed.articles
-                    .as_ref()
-                    .filter(|a| a.is_empty())
                     .is_none()
                     .then_some(0)
                     .unwrap_or(feed.last_seen)

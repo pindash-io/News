@@ -14,7 +14,7 @@ use std::{
 };
 
 use anyhow::{Error, Result};
-use eframe::egui;
+use eframe::{egui, IconData};
 use image::EncodableLayout;
 use once_cell::sync::Lazy;
 use r2d2::Pool;
@@ -242,16 +242,15 @@ fn main() -> Result<()> {
                                             feeds.iter_mut().find(|f| f.id == feed_id)
                                         })
                                         .map(|f| {
-                                            if articles.as_ref().filter(|a| !a.is_empty()).is_some()
-                                                && f.articles.is_none()
-                                            {
+                                            if articles.is_some() && f.articles.is_none() {
                                                 f.last_seen = articles
                                                     .as_ref()
                                                     .and_then(|a| a.last())
                                                     .map(|a| a.created)
-                                                    .unwrap();
+                                                    .unwrap_or(f.last_seen);
                                                 f.articles = articles;
                                                 feed.last_seen = f.last_seen;
+                                                feed.articles = Some(Vec::new());
                                             }
                                             f.status = true;
                                         })
@@ -290,10 +289,10 @@ fn main() -> Result<()> {
                                         description,
                                         mut entries,
                                         published,
-                                        updated,
                                         authors,
                                         links,
                                         ..
+                                        // updated,
                                         // logo,
                                         // icon,
                                         // categories,
@@ -308,9 +307,8 @@ fn main() -> Result<()> {
 
                                     let published = entries
                                         .first()
-                                        .and_then(|e| e.published.or(e.updated))
+                                        .and_then(|e| e.published)
                                         .or(published)
-                                        .or(updated)
                                         .map(|t| t.timestamp_millis())
                                         .unwrap_or(feed.last_seen);
 
@@ -343,6 +341,12 @@ fn main() -> Result<()> {
                                         .find_map(|link| {
                                             if !link.href.ends_with(".xml")
                                                 && !link.href.ends_with(".atom")
+                                                && !link.href.ends_with("rss/")
+                                                && !link.href.ends_with("rss")
+                                                && !link.href.ends_with("atom/")
+                                                && !link.href.ends_with("atom")
+                                                && !link.href.ends_with("feed")
+                                                && !link.href.ends_with("feed/")
                                             {
                                                 Some(link.href.to_owned())
                                             } else {
@@ -370,6 +374,10 @@ fn main() -> Result<()> {
                                                 .trim_end_matches("index.xml")
                                                 .trim_end_matches("feed.xml")
                                                 .trim_end_matches("feed.atom")
+                                                .trim_end_matches("feed/")
+                                                .trim_end_matches("feed")
+                                                .trim_end_matches("rss/")
+                                                .trim_end_matches("rss")
                                                 .to_string()
                                         });
 
@@ -498,10 +506,18 @@ fn main() -> Result<()> {
     });
 
     rt.block_on(async {
+        let icon = image::load_from_memory(include_bytes!("../logo.png"))?.to_rgba8();
+        let (width, height) = icon.dimensions();
         let store = Store::new(tx, folders);
         let options = eframe::NativeOptions {
+            follow_system_theme: true,
             drag_and_drop_support: true,
             fullsize_content: true,
+            icon_data: Some(IconData {
+                rgba: icon.into_raw(),
+                width,
+                height,
+            }),
 
             initial_window_size: Some(egui::vec2(1280.0, 1024.0)),
 
@@ -514,7 +530,9 @@ fn main() -> Result<()> {
             APP_NAME,
             options,
             Box::new(|cc| Box::new(ui::App::new(&cc, store))),
-        );
+        )
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        Ok::<(), Error>(())
     });
 
     tracing::info!("app exit!");

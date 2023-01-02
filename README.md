@@ -1,6 +1,12 @@
-# PinDash News
+<p align="center">
+  <img src="https://raw.githubusercontent.com/pindash-io/News/logo.svg" height="200" />
+</p>
 
-`News` 是一款阅读器，当前支持 RSS 订阅和阅读，后续会开发更多有意思的功能。
+<h1 align="center">PinDash News</h1>
+
+<div align="center">
+  <p><strong>阅读器，当前支持 RSS 订阅和阅读，后续会开发更多有意思的功能</strong></p>
+</div>
 
 ![App](screenshot.png)
 

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::vec;
 
-use eframe::egui::{self, Context, FontData, FontDefinitions};
+use eframe::egui::{self, Context, FontData, FontDefinitions, RichText};
 use egui_extras::RetainedImage;
 
 use crate::*;
@@ -379,7 +379,9 @@ impl eframe::App for App {
                 });
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {});
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.code(RichText::new(self.article.content.to_owned()));
+                });
             });
         });
     }
