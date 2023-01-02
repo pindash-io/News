@@ -398,6 +398,8 @@ impl eframe::App for App {
                                                     {
                                                         *current_article = article.clone();
                                                     }
+
+                                                    ui.separator();
                                                 })
                                             });
                                     }
