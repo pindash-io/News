@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/pindash-io/News/logo.svg" height="200" />
+  <img src="https://raw.githubusercontent.com/pindash-io/News/main/logo.svg" height="200" />
 </p>
 
 <h1 align="center">PinDash News</h1>
