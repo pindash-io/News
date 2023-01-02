@@ -36,6 +36,8 @@ $ RUST_LOG=info cargo run --features="wgpu" --release
 
 * [Lucide Icons](https://lucide.dev/)
 
+* [LXGW WenKai / 霞鹜文楷](https://github.com/lxgw/LxgwWenKai)
+
 * etc.
 
 ## License

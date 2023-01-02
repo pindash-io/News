@@ -62,9 +62,12 @@ fn main() -> Result<()> {
     }
 
     // https://cj.rs/blog/sqlite-pragma-cheatsheet-for-performance-and-consistency/
+    // https://developer.apple.com/documentation/xcode/reducing-disk-writes
+    // https://www.theunterminatedstring.com/sqlite-vacuuming/
     let db = SqliteConnectionManager::file(config_dir.join("news.db")).with_init(|c| {
         c.execute_batch(
             r#"
+                PRAGMA auto_vacuum = INCREMENTAL;
                 PRAGMA synchronous = NORMAL;
                 PRAGMA journal_mode = WAL;
                 PRAGMA foreign_keys = ON;
@@ -139,7 +142,9 @@ fn main() -> Result<()> {
                 tracing::info!("{:?}", &msg);
                 match msg.deref() {
                     Message::Feed(action, feed) => {
-                        let mut conn = pool.get()?;
+                        let Ok(mut conn) = pool.get() else {
+                            continue;
+                        };
                         tracing::info!("{:?} {:?}", action, feed);
                         match action {
                             Action::Create => {
@@ -416,7 +421,9 @@ fn main() -> Result<()> {
                         }
                     }
                     Message::Folder(action, folder) => {
-                        let mut conn = pool.get()?;
+                        let Ok(mut conn) = pool.get() else {
+                            continue;
+                        };
                         tracing::info!("{:?} {:?}", action, folder);
                         match action {
                             Action::Create => {
@@ -506,7 +513,7 @@ fn main() -> Result<()> {
         eframe::run_native(
             APP_NAME,
             options,
-            Box::new(|_cc| Box::new(ui::App::new(store))),
+            Box::new(|cc| Box::new(ui::App::new(&cc, store))),
         );
     });
 

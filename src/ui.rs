@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::vec;
 
-use eframe::egui;
+use eframe::egui::{self, Context, FontData, FontDefinitions};
 use egui_extras::RetainedImage;
 
 use crate::*;
@@ -22,7 +22,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(store: Store) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, store: Store) -> Self {
         let mut icons = HashMap::<&'static str, RetainedImage>::new();
 
         icons.insert(
@@ -71,6 +71,27 @@ impl App {
             Box::new(windows::folder::EditWindow::default()),
         ];
         let open = HashMap::default();
+
+        let mut fonts = FontDefinitions::default();
+
+        fonts.font_data.insert(
+            "LXGW WenKai".to_owned(),
+            FontData::from_static(include_bytes!("../fonts/LXGWWenKaiMono-Regular.ttf")),
+        );
+
+        fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default()
+            .insert(0, "LXGW WenKai".to_owned());
+
+        fonts
+            .families
+            .entry(egui::FontFamily::Monospace)
+            .or_default()
+            .push("LXGW WenKai".to_owned());
+
+        cc.egui_ctx.set_fonts(fonts);
 
         Self {
             store,
@@ -367,11 +388,16 @@ impl eframe::App for App {
                                             .and_then(|feed| feed.articles.as_ref())
                                             .map(|articles| {
                                                 articles.iter().rev().for_each(|article| {
-                                                    ui.selectable_value(
-                                                        &mut current_article.id,
-                                                        article.id,
-                                                        article.title.to_string(),
-                                                    );
+                                                    if ui
+                                                        .selectable_value(
+                                                            &mut current_article.id,
+                                                            article.id,
+                                                            article.title.to_string(),
+                                                        )
+                                                        .changed()
+                                                    {
+                                                        *current_article = article.clone();
+                                                    }
                                                 })
                                             });
                                     }
@@ -381,9 +407,7 @@ impl eframe::App for App {
                 });
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.label("content");
-                });
+                egui::ScrollArea::vertical().show(ui, |ui| {});
             });
         });
     }

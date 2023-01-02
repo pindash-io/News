@@ -507,7 +507,7 @@ pub fn find_articles_by_feed(
                 id,
                 url,
                 title,
-                content,
+                ifnull(content, ''),
                 created,
                 updated,
                 feed_id,
