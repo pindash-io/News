@@ -189,43 +189,15 @@ impl eframe::App for App {
                     .auto_shrink([false; 2])
                     .show_viewport(ui, |ui, rect| {
                         ui.set_width(rect.width());
-                        ui.set_height(rect.height());
+                        ui.set_min_height(rect.height());
+
                         let folder_img = self.icons.get("folder").unwrap();
                         let link_img = self.icons.get("link").unwrap();
                         let open = &mut self.open;
                         let current_feed = &mut self.feed;
-                        // fn circle_icon(ui: &mut egui::Ui, openness: f32, response: &egui::Response) {
-                        //     let stroke = ui.style().interact(&response).fg_stroke;
-                        //     let radius = egui::lerp(2.0..=3.0, openness);
-                        //     ui.painter().circle_filled(response.rect.center(), radius, stroke.color);
-                        // }
-                        // let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
-                        //     ui.ctx(),
-                        //     ui.make_persistent_id("my_collapsing_state"),
-                        //     false,
-                        // );
-                        // // let header_res = ui.horizontal(|ui| {
-                        //    let header_res =          ui.with_layout(
-                        //                 egui::Layout::top_down_justified(egui::Align::LEFT),
-                        //                 |ui| {
-                        //                     ui.horizontal(|ui| {
-                        //     state.show_toggle_button(ui, circle_icon);
-                        //     let id = current_feed.id;
-                        //                             ui
-                        //                                 .selectable_value(
-                        //                                     &mut current_feed.id,
-                        //                                     id,
-                        //                                     "dsfldsl sdfjlds ",
-                        //                                 );
-                        // });
-                        //                     });
-                        // state.show_body_indented(&header_res.response, ui, |ui| ui.label("Body"));
 
                         if let Ok(folders) = folders.try_read() {
                             folders.iter().for_each(move |folder| {
-                                // ui.collapsing(folder.name.to_string(), |ui| {
-                                //     ui.group(|ui| {});
-                                // });
 
                                 let id = ui.make_persistent_id(folder.name.to_string());
                                 egui::collapsing_header::CollapsingState::load_with_default_open(
@@ -365,12 +337,10 @@ impl eframe::App for App {
                 .width_range(128.0..=360.)
                 .show_inside(ui, |ui| {
                     egui::ScrollArea::vertical()
-                        // .auto_shrink([true; 2])
-                        // .stick_to_bottom(true)
-                        // .stick_to_right(true)
+                        .auto_shrink([false; 2])
                         .show_viewport(ui, |ui, rect| {
                             ui.set_width(rect.width());
-                            ui.set_height(rect.height());
+                            ui.set_min_height(rect.height());
 
                             ui.with_layout(
                                 egui::Layout::top_down_justified(egui::Align::LEFT),
