@@ -195,6 +195,7 @@ impl eframe::App for App {
                         let link_img = self.icons.get("link").unwrap();
                         let open = &mut self.open;
                         let current_feed = &mut self.feed;
+                        let current_article = &mut self.article;
 
                         if let Ok(folders) = folders.try_read() {
                             folders.iter().for_each(move |folder| {
@@ -295,6 +296,7 @@ impl eframe::App for App {
                                                         })
                                                         .changed()
                                                     {
+                                                        *current_article = models::Article::default();
                                                         *current_feed = feed.clone();
                                                         let mut f = models::Feed::new(feed.url.to_owned(), feed.name.to_owned(), feed.folder_id);
                                                         f.id = feed.id;
