@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::vec;
 
-use eframe::egui::{self, Context, FontData, FontDefinitions, RichText};
+use eframe::egui::{self, Context, FontData, FontDefinitions, Label, RichText, Sense};
 use egui_extras::RetainedImage;
 
 use crate::*;
@@ -298,14 +298,9 @@ impl eframe::App for App {
                                                     {
                                                         *current_article = models::Article::default();
                                                         *current_feed = feed.clone();
-                                                        let mut f = models::Feed::new(feed.url.to_owned(), feed.name.to_owned(), feed.folder_id);
-                                                        f.id = feed.id;
-                                                        f.status = feed.status;
-                                                        f.last_seen = feed.last_seen;
-                                                        f.articles = feed.articles.is_some().then(Vec::new);
                                                         if let Err(e) = sender.send(Message::Feed (
                                                             Action::Fetch,
-                                                            f
+                                                            feed.clone_without_articles(),
                                                         )) {
                                                             tracing::error!("{e}");
                                                         }
@@ -328,7 +323,16 @@ impl eframe::App for App {
                 }
                 let link_img = self.icons.get("link").unwrap();
                 ui.image(link_img.texture_id(ctx), link_img.size_vec2() * 0.5);
-                ui.heading(name);
+                if ui
+                    .add(Label::new(RichText::new(name).heading()).sense(Sense::click()))
+                    .clicked()
+                {
+                    self.feed
+                        .site
+                        .as_ref()
+                        .cloned()
+                        .and_then(|site| open::that(site).ok());
+                }
             });
 
             ui.separator();

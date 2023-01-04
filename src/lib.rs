@@ -6,6 +6,7 @@ use tokio::sync::watch::Sender;
 
 pub use components::*;
 pub mod db;
+pub mod easymark;
 pub mod models;
 pub mod ui;
 pub mod windows;

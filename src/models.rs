@@ -15,6 +15,7 @@ pub struct Feed {
     pub id: u64,
     pub name: String,
     pub url: String,
+    pub site: Option<String>,
     pub last_seen: i64,
     pub folder_id: u64,
     /// true: loading, false not loading
@@ -52,8 +53,16 @@ impl Feed {
             url,
             folder_id,
             last_seen: 0,
+            site: None,
             status: false,
             articles: None,
+        }
+    }
+
+    pub fn clone_without_articles(&self) -> Self {
+        Self {
+            articles: self.articles.is_some().then(Vec::new),
+            ..self.clone()
         }
     }
 }

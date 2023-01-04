@@ -42,4 +42,5 @@ feed-rs = { version = "1.2.0", git = "https://github.com/fundon/feed-rs.git", re
 chrono = { version = "0.4.23", default-features = false, features = ["clock"] }
 url = "2.3.1"
 open = "3.2.0"
+scraper = { version = "0.14.0", default-features = false }
 # egui_dnd = "0.1.0"

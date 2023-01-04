@@ -29,6 +29,7 @@ pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Re
                     f.id,
                     f.name,
                     f.url,
+                    f.site,
                     f.last_seen,
                     df.d
                 FROM
@@ -52,6 +53,8 @@ pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Re
                             f.name,
                             'url',
                             f.url,
+                            'site',
+                            f.site,
                             'last_seen',
                             f.last_seen,
                             'folder_id',
