@@ -415,6 +415,7 @@ fn main() -> Result<()> {
                                                 } else {
                                                     f.articles = articles;
                                                 }
+                                                f.site = Some(site.clone());
                                                 f.last_seen = published;
                                                 f.status = false;
                                             })
