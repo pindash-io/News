@@ -386,7 +386,7 @@ impl eframe::App for App {
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.code(RichText::new(self.article.content.to_owned()));
+                    easymark::render(ui, easymark::parser(&self.article.content.to_owned()));
                 });
             });
         });

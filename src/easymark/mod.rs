@@ -1,2 +1,5 @@
-pub mod parser;
-pub mod render;
+mod parser;
+mod render;
+
+pub use parser::parser;
+pub use render::render;
