@@ -1,10 +1,84 @@
-use anyhow::Result;
+use std::{
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 
-use r2d2::PooledConnection;
+use anyhow::Result;
+use r2d2::{Pool, PooledConnection};
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::OptionalExtension;
+use rusqlite_migration::{Migrations, M};
 
 use crate::models::{Article, Entry, Feed, FeedType, Folder, Person};
+
+// https://cj.rs/blog/sqlite-pragma-cheatsheet-for-performance-and-consistency/
+// https://developer.apple.com/documentation/xcode/reducing-disk-writes
+// https://www.theunterminatedstring.com/sqlite-vacuuming/
+pub fn init(
+    dir: PathBuf,
+    folders: Arc<RwLock<Vec<Folder>>>,
+) -> Result<Pool<SqliteConnectionManager>> {
+    let pool = Pool::new(
+        SqliteConnectionManager::file(dir.join("news.db")).with_init(|c| {
+            c.execute_batch(
+                r#"
+                PRAGMA auto_vacuum = INCREMENTAL;
+                PRAGMA synchronous = NORMAL;
+                PRAGMA journal_mode = WAL;
+                PRAGMA foreign_keys = ON;
+                PRAGMA busy_timeout = 5000;
+            "#,
+            )?;
+            Ok(())
+        }),
+    )?;
+
+    migrate(&mut pool.get()?, folders)?;
+
+    Ok(pool)
+}
+
+fn migrate(
+    conn: &mut PooledConnection<SqliteConnectionManager>,
+    folders: Arc<RwLock<Vec<Folder>>>,
+) -> Result<()> {
+    let migrations = Migrations::new(vec![
+        M::up(include_str!("../migrations/0-sources.sql")),
+        M::up(include_str!("../migrations/1-folders.sql")),
+        M::up(include_str!("../migrations/2-default-folder.sql")),
+        M::up(include_str!("../migrations/3-feeds.sql")),
+        M::up(include_str!("../migrations/4-seed.sql")),
+        M::up(include_str!("../migrations/5-rename-date-columns.sql")),
+        M::up(include_str!("../migrations/6-feeds-add-url-published.sql")),
+        M::up(include_str!("../migrations/7-authors.sql")),
+        M::up(include_str!("../migrations/8-rename-tables.sql")),
+        M::up(include_str!(
+            "../migrations/9-authors-rename-article_id-to-feed_id.sql"
+        )),
+        M::up(include_str!(
+            "../migrations/10-articles-rename-source_id-to-feed_id.sql"
+        )),
+        M::up(include_str!(
+            "../migrations/11-feeds-add-site-type-title.sql"
+        )),
+        M::up(include_str!(
+            "../migrations/12-feeds-rename-published-to-updated.sql"
+        )),
+        M::up(include_str!(
+            "../migrations/13-feeds-add-unique-index-feed_id-url.sql"
+        )),
+    ]);
+
+    migrations.to_latest(conn)?;
+
+    let results = fetch_folders(conn)?;
+
+    if let Ok(mut fd) = folders.write() {
+        fd.extend_from_slice(&results);
+    }
+
+    Ok(())
+}
 
 pub fn fetch_folders(conn: &mut PooledConnection<SqliteConnectionManager>) -> Result<Vec<Folder>> {
     let folders = conn
