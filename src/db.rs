@@ -443,10 +443,12 @@ fn upsert_articles(
             SET
                 title = EXCLUDED.title,
                 content = EXCLUDED.content,
-                created = ifnull(EXCLUDED.created, articles.created),
+                -- created = ifnull(EXCLUDED.created, articles.created),
                 updated = ifnull(EXCLUDED.updated, ifnull(articles.updated, articles.created))
             RETURNING
-                id
+                id,
+                created,
+                updated
             "#,
         )?;
 
@@ -504,7 +506,7 @@ fn upsert_articles(
                 published
             };
 
-            let article_id: u64 = stmt.query_row(
+            let (article_id, created, updated): (u64, u64, u64) = stmt.query_row(
                 rusqlite::params![
                     id,
                     article
@@ -531,7 +533,7 @@ fn upsert_articles(
                     published,
                     updated,
                 ],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(2)?, row.get(2)?)),
             )?;
 
             if article.authors.is_empty() {
@@ -619,7 +621,7 @@ pub fn find_articles_by_feed(
             WHERE
                 feed_id = ?1
             AND
-                updated > ?2
+                id > ?2
             ORDER BY
                 id
             "#,
@@ -628,9 +630,9 @@ pub fn find_articles_by_feed(
             rusqlite::params![
                 feed.id,
                 feed.articles
-                    .is_none()
-                    .then_some(0)
-                    .unwrap_or(feed.last_seen)
+                    .as_ref()
+                    .and_then(|articles| articles.last().map(|a| a.id))
+                    .unwrap_or(0)
             ],
             |row| {
                 Ok(Article {

@@ -60,11 +60,6 @@ fn main() -> Result<()> {
     let folders = Arc::new(RwLock::new(Vec::new()));
     let pool = db::init(config_dir, folders.clone())?;
 
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .thread_name(APP_NAME)
-        .build()?;
-
     let (tx, mut rx) = tokio::sync::watch::channel::<Message>(Message::Normal);
 
     let folders_writer = folders.clone();
@@ -166,7 +161,9 @@ fn main() -> Result<()> {
                                 // first fetch
                                 let articles = feed
                                     .articles
-                                    .is_none()
+                                    .as_ref()
+                                    .and_then(|articles| articles.last().filter(|a| a.id == 0))
+                                    .is_some()
                                     .then(|| db::find_articles_by_feed(&mut conn, &feed).ok())
                                     .flatten();
 
@@ -180,14 +177,16 @@ fn main() -> Result<()> {
                                         })
                                         .map(|f| {
                                             if articles.is_some() && f.articles.is_none() {
-                                                f.last_seen = articles
+                                                let last = articles
                                                     .as_ref()
-                                                    .and_then(|a| a.last())
-                                                    .map(|a| a.created)
+                                                    .and_then(|a| a.last().cloned());
+                                                f.last_seen = last
+                                                    .as_ref()
+                                                    .map(|a| a.updated)
                                                     .unwrap_or(f.last_seen);
                                                 f.articles = articles;
                                                 feed.last_seen = f.last_seen;
-                                                feed.articles = Some(Vec::new());
+                                                feed.articles = last.map(|a| vec![a]);
                                             }
                                             f.status = true;
                                         })
@@ -226,10 +225,10 @@ fn main() -> Result<()> {
                                         description,
                                         mut entries,
                                         published,
+                                        updated,
                                         authors,
                                         links,
                                         ..
-                                        // updated,
                                         // logo,
                                         // icon,
                                         // categories,
@@ -242,10 +241,13 @@ fn main() -> Result<()> {
                                         // generator,
                                     } = feed_rs::parser::parse(data.as_ref())?;
 
+                                    // @TODO: pre-processing entries data, then diff & update
+                                    // folders data
+
                                     let published = entries
                                         .first()
-                                        .and_then(|e| e.published)
-                                        .or(published)
+                                        .and_then(|e| e.updated.or(e.published))
+                                        .or(updated.or(published))
                                         .map(|t| t.timestamp_millis())
                                         .unwrap_or(feed.last_seen);
 
@@ -442,6 +444,11 @@ fn main() -> Result<()> {
         drop(rt);
         Ok::<(), Error>(())
     });
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .thread_name(APP_NAME)
+        .build()?;
 
     rt.block_on(async {
         let icon = image::load_from_memory(include_bytes!("../logo.png"))?.to_rgba8();

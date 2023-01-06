@@ -45,6 +45,16 @@ pub struct Article {
     pub authors: Option<Vec<Author>>,
 }
 
+impl Article {
+    pub fn clone_with_content_authors(&self) -> Self {
+        Self {
+            content: String::new(),
+            authors: None,
+            ..self.clone()
+        }
+    }
+}
+
 impl Feed {
     pub fn new(url: String, name: String, folder_id: u64) -> Self {
         Self {
@@ -59,9 +69,14 @@ impl Feed {
         }
     }
 
-    pub fn clone_without_articles(&self) -> Self {
+    pub fn clone_with_last_article(&self) -> Self {
         Self {
-            articles: self.articles.is_some().then(Vec::new),
+            articles: self
+                .articles
+                .as_ref()
+                .and_then(|articles| articles.last().map(|a| a.clone_with_content_authors()))
+                .or_else(|| Some(Article::default()))
+                .map(|a| vec![a]),
             ..self.clone()
         }
     }

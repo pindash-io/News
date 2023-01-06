@@ -300,7 +300,7 @@ impl eframe::App for App {
                                                         *current_feed = feed.clone();
                                                         if let Err(e) = sender.send(Message::Feed (
                                                             Action::Fetch,
-                                                            feed.clone_without_articles(),
+                                                            feed.clone_with_last_article(),
                                                         )) {
                                                             tracing::error!("{e}");
                                                         }
