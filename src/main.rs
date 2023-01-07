@@ -251,14 +251,17 @@ fn main() -> Result<()> {
                                         .map(|t| t.timestamp_millis())
                                         .unwrap_or(feed.last_seen);
 
-                                    let flag = published > feed.last_seen;
+                                    // sometimes some feed is non-standard, `updated` and
+                                    // `published` can not be parsed.
+                                    let flag = published > feed.last_seen || (published == feed.last_seen && !entries.is_empty());
 
                                     tracing::info!(
-                                        "{}: has new entries {}, last_seen = {}, published = {}",
+                                        "{}: has new entries {}, last_seen = {}, published = {}, has {} entries",
                                         feed.name,
                                         flag,
                                         feed.last_seen,
-                                        published
+                                        published,
+                                        entries.len()
                                     );
 
                                     if !flag {
