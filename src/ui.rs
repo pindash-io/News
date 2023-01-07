@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::vec;
 
-use eframe::egui::{self, Context, FontData, FontDefinitions, Label, RichText, Sense};
+use eframe::egui::{self, FontData, FontDefinitions, Label, RichText, Sense};
 use egui_extras::RetainedImage;
 
 use crate::*;

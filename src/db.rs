@@ -446,9 +446,7 @@ fn upsert_articles(
                 -- created = ifnull(EXCLUDED.created, articles.created),
                 updated = ifnull(EXCLUDED.updated, ifnull(articles.updated, articles.created))
             RETURNING
-                id,
-                created,
-                updated
+                id
             "#,
         )?;
 
@@ -506,7 +504,7 @@ fn upsert_articles(
                 published
             };
 
-            let (article_id, created, updated): (u64, u64, u64) = stmt.query_row(
+            let article_id: u64 = stmt.query_row(
                 rusqlite::params![
                     id,
                     article
@@ -533,7 +531,7 @@ fn upsert_articles(
                     published,
                     updated,
                 ],
-                |row| Ok((row.get(0)?, row.get(2)?, row.get(2)?)),
+                |row| row.get(0),
             )?;
 
             if article.authors.is_empty() {

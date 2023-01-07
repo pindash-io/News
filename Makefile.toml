@@ -1,0 +1,6 @@
+[env]
+CARGO_MAKE_CRATE_TARGET_TRIPLE = "x86_64-apple-darwin"
+
+[tasks.dev]
+command = "cargo"
+args = ["run", "--features=wgpu"]

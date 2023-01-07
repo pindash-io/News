@@ -124,7 +124,7 @@ pub fn item_ui(ui: &mut Ui, text: &str) {
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Style {
-    /// # heading (large text)
+    /// # heading 1-6
     pub heading: bool,
 
     /// > quoted (slightly dimmer color or other font style)
@@ -168,32 +168,32 @@ fn rich_text_from_style(text: &str, style: &Style) -> RichText {
     let small = small || raised; // Raised text is also smaller
 
     let mut rich_text = RichText::new(text);
-    if heading && !small {
-        rich_text = rich_text.heading().strong();
-    }
-    if small && !heading {
-        rich_text = rich_text.small();
-    }
-    if code {
-        rich_text = rich_text.code();
-    }
-    if strong {
-        rich_text = rich_text.strong();
-    } else if quoted {
-        rich_text = rich_text.weak();
-    }
-    if underline {
-        rich_text = rich_text.underline();
-    }
-    if strikethrough {
-        rich_text = rich_text.strikethrough();
-    }
-    if italics {
-        rich_text = rich_text.italics();
-    }
-    if raised {
-        rich_text = rich_text.raised();
-    }
+    // if heading && !small {
+    //     rich_text = rich_text.heading().strong();
+    // }
+    // if small && !heading {
+    //     rich_text = rich_text.small();
+    // }
+    // if code {
+    //     rich_text = rich_text.code();
+    // }
+    // if strong {
+    //     rich_text = rich_text.strong();
+    // } else if quoted {
+    //     rich_text = rich_text.weak();
+    // }
+    // if underline {
+    //     rich_text = rich_text.underline();
+    // }
+    // if strikethrough {
+    //     rich_text = rich_text.strikethrough();
+    // }
+    // if italics {
+    //     rich_text = rich_text.italics();
+    // }
+    // if raised {
+    //     rich_text = rich_text.raised();
+    // }
     rich_text
 }
 
