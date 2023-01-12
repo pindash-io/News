@@ -16,7 +16,7 @@ pub fn render(ui: &mut Ui, html: Html) {
         let row_height = ui.text_style_height(&TextStyle::Body);
         ui.set_row_height(row_height);
 
-        html.tree
+        let _ = html.tree
             .nodes()
             .into_iter()
             .map(|item| {
@@ -33,7 +33,7 @@ pub fn render(ui: &mut Ui, html: Html) {
                     _ => {}
                 }
                 if item.has_children() {
-                    item.children()
+                    let _ = item.children()
                         .into_iter()
                         .map(|item| {
                             let value = item.value();
