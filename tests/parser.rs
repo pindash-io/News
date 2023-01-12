@@ -1,11 +1,15 @@
 use std::fs;
 
 use anyhow::Result;
+use ego_tree;
 use feed_rs;
 use pindash_news::easymark;
-use scraper;
-use ego_tree;
 use pulldown_cmark;
+use scraper::{
+    self,
+    node::{Element, Text},
+    Node,
+};
 
 #[test]
 fn parse_entity() -> Result<()> {
@@ -29,7 +33,24 @@ fn parse_entity() -> Result<()> {
     Ok(())
 }
 
-fn parse_node<'a, T: std::fmt::Debug>(node: ego_tree::NodeRef<'a, T>) -> Result<()> {
-    dbg!(node.value());
+fn parse_node<'a>(node: ego_tree::NodeRef<'a, Node>) -> Result<()> {
+    let value = node.value();
+    match value {
+        Node::Element(Element {
+            name,
+            id,
+            classes,
+            attrs,
+        }) => {
+            dbg!(name, id);
+        }
+        Node::Text(Text { text }) => {
+            dbg!(text);
+        }
+        k @ _ => {
+            dbg!(k);
+        }
+    }
+
     Ok(())
 }
