@@ -4,7 +4,7 @@ use anyhow::Result;
 use ego_tree;
 use feed_rs;
 use pindash_news::easymark;
-use pulldown_cmark::{self, Event, HeadingLevel, Tag};
+use pulldown_cmark::{self, CowStr, Event, HeadingLevel, Tag};
 use scraper::{
     self,
     node::{Element, Text},
@@ -31,10 +31,11 @@ fn parse_entity() -> Result<()> {
         parse_node(node, &mut events);
     }
 
+    dbg!(events);
     Ok(())
 }
 
-fn parse_node<'a>(node: ego_tree::NodeRef<'a, Node>, events: &mut Vec<Event>) -> Result<()> {
+fn parse_node<'a>(node: ego_tree::NodeRef<'a, Node>, events: &mut Vec<Event<'a>>) -> Result<()> {
     let value = node.value();
     let mut event = None;
     match value {
@@ -73,8 +74,7 @@ fn parse_node<'a>(node: ego_tree::NodeRef<'a, Node>, events: &mut Vec<Event>) ->
                 "blockquote" => {
                     event.replace(Event::Start(Tag::BlockQuote));
                 }
-                "pre" => {
-                }
+                "pre" => {}
                 "ul" => {
                     event.replace(Event::Start(Tag::List(None)));
                 }
@@ -90,11 +90,15 @@ fn parse_node<'a>(node: ego_tree::NodeRef<'a, Node>, events: &mut Vec<Event>) ->
             }
         }
         Node::Text(Text { text }) => {
-            dbg!(text);
+            event.replace(Event::Text(CowStr::Borrowed(text)));
         }
         k @ _ => {
             dbg!(k);
         }
+    }
+
+    if let Some(event) = event.take() {
+        events.push(event);
     }
 
     Ok(())
