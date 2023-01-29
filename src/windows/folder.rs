@@ -59,7 +59,9 @@ impl View for AddWindow {
                 ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Write folder name"));
             if self.autofocus {
                 self.autofocus = false;
-                ui.memory().request_focus(resp.id);
+                ui.memory_mut(|memory| {
+                    memory.request_focus(resp.id);
+                });
             }
         });
 
@@ -208,7 +210,7 @@ impl View for EditWindow {
                 ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Write folder name"));
             if self.autofocus {
                 self.autofocus = false;
-                ui.memory().request_focus(resp.id);
+                ui.memory_mut(|memory| memory.request_focus(resp.id));
             }
         });
         ui.end_row();

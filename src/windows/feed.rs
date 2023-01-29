@@ -70,7 +70,9 @@ impl View for AddWindow {
                 ui.add(egui::TextEdit::singleline(&mut self.url).hint_text("Write feed url"));
             if self.autofocus {
                 self.autofocus = false;
-                ui.memory().request_focus(resp.id);
+                ui.memory_mut(|memory| {
+                    memory.request_focus(resp.id);
+                });
             }
         });
         ui.end_row();
@@ -258,7 +260,9 @@ impl View for EditWindow {
                 ui.add(egui::TextEdit::singleline(&mut self.feed.url).hint_text("Write feed url"));
             if self.autofocus {
                 self.autofocus = false;
-                ui.memory().request_focus(resp.id);
+                ui.memory_mut(|memory| {
+                    memory.request_focus(resp.id);
+                });
             }
         });
         ui.end_row();

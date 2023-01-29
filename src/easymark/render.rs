@@ -16,7 +16,8 @@ pub fn render(ui: &mut Ui, html: Html) {
         let row_height = ui.text_style_height(&TextStyle::Body);
         ui.set_row_height(row_height);
 
-        let _ = html.tree
+        let _ = html
+            .tree
             .nodes()
             .into_iter()
             .map(|item| {
@@ -33,7 +34,8 @@ pub fn render(ui: &mut Ui, html: Html) {
                     _ => {}
                 }
                 if item.has_children() {
-                    let _ = item.children()
+                    let _ = item
+                        .children()
                         .into_iter()
                         .map(|item| {
                             let value = item.value();
@@ -210,7 +212,7 @@ fn bullet_point(ui: &mut Ui, width: f32) -> Response {
 
 fn numbered_point(ui: &mut Ui, width: f32, number: &str) -> Response {
     let font_id = TextStyle::Body.resolve(ui.style());
-    let row_height = ui.fonts().row_height(&font_id);
+    let row_height = ui.fonts(|fonts| fonts.row_height(&font_id));
     let (rect, response) = ui.allocate_exact_size(vec2(width, row_height), Sense::hover());
     let text = format!("{}.", number);
     let text_color = ui.visuals().strong_text_color();

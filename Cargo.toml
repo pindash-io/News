@@ -18,10 +18,17 @@ wgpu = []
 
 [dependencies]
 anyhow = "1.0.68"
-eframe = { git = "https://github.com/fundon/egui.git", rev = "a1f17237", features = [
+# eframe = { git = "https://github.com/fundon/egui.git", rev = "a1f17237", features = [
+#   "wgpu",
+# ] }
+# egui_extras = { git = "https://github.com/fundon/egui.git", rev = "a1f17237", features = [
+#   "svg",
+#   "image",
+# ] }
+eframe = { git = "https://github.com/emilk/egui.git", rev = "f222ee0", features = [
   "wgpu",
 ] }
-egui_extras = { git = "https://github.com/fundon/egui.git", rev = "a1f17237", features = [
+egui_extras = { git = "https://github.com/emilk/egui.git", rev = "f222ee0", features = [
   "svg",
   "image",
 ] }
