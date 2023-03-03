@@ -1,5 +1,4 @@
-mod parser;
 mod render;
 
-pub use parser::parser;
+pub use html_to_pulldown_cmark_events::parser;
 pub use render::render;

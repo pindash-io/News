@@ -386,7 +386,10 @@ impl eframe::App for App {
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    easymark::render(ui, easymark::parser(&self.article.content.to_owned()));
+                    let mut events = Vec::new();
+                    // easymark::parser(&self.article.content.to_owned(), &mut events);
+                    easymark::parser(include_str!("../tests/fixtures/simple.html"), &mut events);
+                    easymark::render(ui, events);
                 });
             });
         });
