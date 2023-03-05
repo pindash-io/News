@@ -339,7 +339,7 @@ impl Highlighter {
         let syntax = self
             .ps
             .find_syntax_by_name(language)
-            .or_else(|| self.ps.find_syntax_by_extension(language))?;
+            .or_else(|| self.ps.find_syntax_by_token(language))?;
 
         let theme = theme.syntect_theme.syntect_key_name();
         let mut h = HighlightLines::new(syntax, &self.ts.themes[theme]);

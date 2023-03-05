@@ -66,3 +66,14 @@
 
 <pre class="rouge highlight"><code data-lang="shell">% <span class="nb">sha256sum</span> <span class="nt">-c</span> CHECKSUM.SHA256-FreeBSD-13.1-RELEASE-amd64 FreeBSD-13.1-RELEASE-amd64-dvd1.iso
 FreeBSD-13.1-RELEASE-amd64-dvd1.iso: OK</code></pre>
+
+<pre class=" language-rust"><code class=" language-rust"><span class="token comment">///Application’s key-value (KV) database settings</span>
+<span class="token attribute attr-name">#[oxy_app_settings]</span>
+<span class="token keyword">pub</span> <span class="token keyword">struct</span> MyAppKVSettings <span class="token punctuation">{</span>
+    <span class="token comment">/// Key prefix.</span>
+    <span class="token keyword">pub</span> prefix<span class="token punctuation">:</span> Option<span class="token operator">&lt;</span>String<span class="token operator">&gt;</span><span class="token punctuation">,</span>
+    <span class="token comment">/// Path to the UNIX domain socket for the appropriate KV </span>
+    <span class="token comment">/// server instance.</span>
+    <span class="token keyword">pub</span> socket<span class="token punctuation">:</span> Option<span class="token operator">&lt;</span>String<span class="token operator">&gt;</span><span class="token punctuation">,</span>
+<span class="token punctuation">}</span>
+</code></pre>
