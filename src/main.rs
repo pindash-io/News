@@ -17,10 +17,6 @@ use anyhow::{Error, Result};
 use eframe::{egui, IconData};
 use image::EncodableLayout;
 use once_cell::sync::Lazy;
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::{Connection, OpenFlags};
-use rusqlite_migration::{Migrations, M};
 
 use pindash_news::*;
 
@@ -61,76 +57,12 @@ fn main() -> Result<()> {
         fs::create_dir(config_dir.clone())?;
     }
 
-    // https://cj.rs/blog/sqlite-pragma-cheatsheet-for-performance-and-consistency/
-    // https://developer.apple.com/documentation/xcode/reducing-disk-writes
-    // https://www.theunterminatedstring.com/sqlite-vacuuming/
-    let db = SqliteConnectionManager::file(config_dir.join("news.db")).with_init(|c| {
-        c.execute_batch(
-            r#"
-                PRAGMA auto_vacuum = INCREMENTAL;
-                PRAGMA synchronous = NORMAL;
-                PRAGMA journal_mode = WAL;
-                PRAGMA foreign_keys = ON;
-                PRAGMA busy_timeout = 5000;
-            "#,
-        )?;
-        Ok(())
-    });
-
-    let pool = r2d2::Pool::new(db)?;
-
     let folders = Arc::new(RwLock::new(Vec::new()));
-
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .thread_name(APP_NAME)
-        .build()?;
-
-    let folders_writer = folders.clone();
-    rt.block_on(async {
-        let migrations = Migrations::new(vec![
-            M::up(include_str!("../migrations/0-sources.sql")),
-            M::up(include_str!("../migrations/1-folders.sql")),
-            M::up(include_str!("../migrations/2-default-folder.sql")),
-            M::up(include_str!("../migrations/3-feeds.sql")),
-            M::up(include_str!("../migrations/4-seed.sql")),
-            M::up(include_str!("../migrations/5-rename-date-columns.sql")),
-            M::up(include_str!("../migrations/6-feeds-add-url-published.sql")),
-            M::up(include_str!("../migrations/7-authors.sql")),
-            M::up(include_str!("../migrations/8-rename-tables.sql")),
-            M::up(include_str!(
-                "../migrations/9-authors-rename-article_id-to-feed_id.sql"
-            )),
-            M::up(include_str!(
-                "../migrations/10-articles-rename-source_id-to-feed_id.sql"
-            )),
-            M::up(include_str!(
-                "../migrations/11-feeds-add-site-type-title.sql"
-            )),
-            M::up(include_str!(
-                "../migrations/12-feeds-rename-published-to-updated.sql"
-            )),
-            M::up(include_str!(
-                "../migrations/13-feeds-add-unique-index-feed_id-url.sql"
-            )),
-        ]);
-
-        let mut conn = pool.get()?;
-        migrations.to_latest(&mut conn)?;
-
-        let folders = db::fetch_folders(&mut conn)?;
-        tracing::info!("{:?}", folders);
-
-        if let Ok(mut fd) = folders_writer.write() {
-            fd.extend_from_slice(&folders);
-        }
-
-        drop(conn);
-        Ok::<(), Error>(())
-    });
+    let pool = db::init(config_dir, folders.clone())?;
 
     let (tx, mut rx) = tokio::sync::watch::channel::<Message>(Message::Normal);
 
+    let folders_writer = folders.clone();
     thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -229,7 +161,9 @@ fn main() -> Result<()> {
                                 // first fetch
                                 let articles = feed
                                     .articles
-                                    .is_none()
+                                    .as_ref()
+                                    .and_then(|articles| articles.last().filter(|a| a.id == 0))
+                                    .is_some()
                                     .then(|| db::find_articles_by_feed(&mut conn, &feed).ok())
                                     .flatten();
 
@@ -243,14 +177,16 @@ fn main() -> Result<()> {
                                         })
                                         .map(|f| {
                                             if articles.is_some() && f.articles.is_none() {
-                                                f.last_seen = articles
+                                                let last = articles
                                                     .as_ref()
-                                                    .and_then(|a| a.last())
-                                                    .map(|a| a.created)
+                                                    .and_then(|a| a.last().cloned());
+                                                f.last_seen = last
+                                                    .as_ref()
+                                                    .map(|a| a.updated)
                                                     .unwrap_or(f.last_seen);
                                                 f.articles = articles;
                                                 feed.last_seen = f.last_seen;
-                                                feed.articles = Some(Vec::new());
+                                                feed.articles = last.map(|a| vec![a]);
                                             }
                                             f.status = true;
                                         })
@@ -289,10 +225,10 @@ fn main() -> Result<()> {
                                         description,
                                         mut entries,
                                         published,
+                                        updated,
                                         authors,
                                         links,
                                         ..
-                                        // updated,
                                         // logo,
                                         // icon,
                                         // categories,
@@ -305,21 +241,27 @@ fn main() -> Result<()> {
                                         // generator,
                                     } = feed_rs::parser::parse(data.as_ref())?;
 
+                                    // @TODO: pre-processing entries data, then diff & update
+                                    // folders data
+
                                     let published = entries
                                         .first()
-                                        .and_then(|e| e.published)
-                                        .or(published)
+                                        .and_then(|e| e.updated.or(e.published))
+                                        .or(updated.or(published))
                                         .map(|t| t.timestamp_millis())
                                         .unwrap_or(feed.last_seen);
 
-                                    let flag = published > feed.last_seen;
+                                    // sometimes some feed is non-standard, `updated` and
+                                    // `published` can not be parsed.
+                                    let flag = published > feed.last_seen || (published == feed.last_seen && !entries.is_empty());
 
                                     tracing::info!(
-                                        "{}: has new entries {}, last_seen = {}, published = {}",
+                                        "{}: has new entries {}, last_seen = {}, published = {}, has {} entries",
                                         feed.name,
                                         flag,
                                         feed.last_seen,
-                                        published
+                                        published,
+                                        entries.len()
                                     );
 
                                     if !flag {
@@ -505,6 +447,11 @@ fn main() -> Result<()> {
         drop(rt);
         Ok::<(), Error>(())
     });
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .thread_name(APP_NAME)
+        .build()?;
 
     rt.block_on(async {
         let icon = image::load_from_memory(include_bytes!("../logo.png"))?.to_rgba8();

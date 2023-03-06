@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::vec;
 
-use eframe::egui::{self, Context, FontData, FontDefinitions, Label, RichText, Sense};
+use eframe::egui::{self, FontData, FontDefinitions, Label, RichText, Sense};
 use egui_extras::RetainedImage;
 
 use crate::*;
@@ -300,7 +300,7 @@ impl eframe::App for App {
                                                         *current_feed = feed.clone();
                                                         if let Err(e) = sender.send(Message::Feed (
                                                             Action::Fetch,
-                                                            feed.clone_without_articles(),
+                                                            feed.clone_with_last_article(),
                                                         )) {
                                                             tracing::error!("{e}");
                                                         }
@@ -386,7 +386,10 @@ impl eframe::App for App {
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.code(RichText::new(self.article.content.to_owned()));
+                    let mut events = Vec::new();
+                    // easymark::parser(&self.article.content.to_owned(), &mut events);
+                    easymark::parser(include_str!("../tests/fixtures/simple.html"), &mut events);
+                    easymark::render(ui, events);
                 });
             });
         });
