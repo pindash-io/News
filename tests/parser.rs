@@ -36,3 +36,36 @@ fn parse_simple() -> Result<()> {
     dbg!(events);
     Ok(())
 }
+
+#[test]
+fn parse_blockquote() -> Result<()> {
+    let content = include_str!("fixtures/blockquote.html");
+
+    let mut events = Vec::new();
+    easymark::parser(content, &mut events);
+
+    dbg!(events);
+    Ok(())
+}
+
+#[test]
+fn parse_list() -> Result<()> {
+    let content = include_str!("fixtures/list.html");
+
+    let mut events = Vec::new();
+    easymark::parser(content, &mut events);
+
+    dbg!(events);
+    Ok(())
+}
+
+#[test]
+fn parse_code() -> Result<()> {
+    let content = include_str!("fixtures/code.html");
+
+    let mut events = Vec::new();
+    easymark::parser(content, &mut events);
+
+    dbg!(events);
+    Ok(())
+}
