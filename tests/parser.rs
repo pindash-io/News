@@ -69,3 +69,14 @@ fn parse_code() -> Result<()> {
     dbg!(events);
     Ok(())
 }
+
+#[test]
+fn parse_h_list() -> Result<()> {
+    let content = include_str!("fixtures/h_list.html");
+
+    let mut events = Vec::new();
+    easymark::parser(content, &mut events);
+
+    dbg!(events);
+    Ok(())
+}

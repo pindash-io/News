@@ -1,5 +1,10 @@
+use std::slice::Iter;
+
 use anyhow::Result;
-use eframe::egui::*;
+use eframe::{
+    egui::{self, *},
+    epaint::text::LayoutJob,
+};
 use pulldown_cmark::{CodeBlockKind, Event, Tag};
 use scraper::{Html, Node};
 
@@ -36,21 +41,11 @@ pub struct Style {
 
     pub link: bool,
 
-    pub first_item: bool,
+    weak: bool,
 
     pub codeblock: bool,
-}
 
-impl Style {
-    pub fn inline(&self) -> bool {
-        self.strong
-            || self.underline
-            || self.strikethrough
-            || self.italics
-            || self.small
-            || self.raised
-            || self.link
-    }
+    pub newline: bool,
 }
 
 fn rich_text_from_style(text: &str, style: &Style, row_height: f32, diff: f32) -> RichText {
@@ -121,6 +116,73 @@ fn rich_text_from_style(text: &str, style: &Style, row_height: f32, diff: f32) -
     rich_text
 }
 
+fn get_text_color(style: &Style, visuals: &Visuals) -> Option<Color32> {
+    // if let Some(text_color) = self.text_color {
+    //     Some(text_color)
+    // } else if style.strong {
+    if style.strong {
+        Some(visuals.strong_text_color())
+    } else if style.weak {
+        Some(visuals.weak_text_color())
+    } else {
+        visuals.override_text_color
+    }
+}
+
+fn text_format(
+    font_id: FontId,
+    style: &Style,
+    estyle: &egui::Style,
+    default_valign: Align,
+) -> TextFormat {
+    let text_color = get_text_color(style, &estyle.visuals);
+
+    let Style {
+        heading,
+        quoted,
+        code,
+        strong,
+        underline,
+        strikethrough,
+        italics,
+        small,
+        raised,
+        ..
+    } = *style;
+
+    let job_has_color = text_color.is_some();
+    let line_color = text_color.unwrap_or_else(|| estyle.visuals.text_color());
+    let text_color = text_color.unwrap_or(Color32::TEMPORARY_COLOR);
+
+    let background_color = if code {
+        estyle.visuals.code_bg_color
+    } else {
+        Color32::default()
+    };
+    let underline = if underline {
+        Stroke::new(1.0, line_color)
+    } else {
+        Stroke::NONE
+    };
+    let strikethrough = if strikethrough {
+        Stroke::new(1.0, line_color)
+    } else {
+        Stroke::NONE
+    };
+
+    let valign = if raised { Align::TOP } else { default_valign };
+
+    TextFormat {
+        font_id,
+        color: text_color,
+        background: background_color,
+        italics,
+        underline,
+        strikethrough,
+        valign,
+    }
+}
+
 fn bulleted_point(ui: &mut Ui, width: f32, row_height: f32) -> Rect {
     let (rect, response) = ui.allocate_exact_size(vec2(width, row_height), Sense::hover());
     ui.painter().circle_filled(
@@ -170,27 +232,27 @@ pub fn render(ui: &mut Ui, events: Vec<Event<'_>>) -> Result<()> {
         let mut list = None;
         let mut rich_text = None;
         let mut lang = None;
+        let mut iter = events.iter();
 
-        for event in events {
-            item_ui(
-                ui,
-                &mut style,
-                &mut list,
-                &mut rich_text,
-                &mut lang,
-                row_height,
-                diff,
-                one_indent,
-                event,
-            );
-        }
+        render_by_events(
+            ui,
+            &mut iter,
+            &mut style,
+            &mut list,
+            &mut rich_text,
+            &mut lang,
+            row_height,
+            diff,
+            one_indent,
+        );
     });
 
     Ok(())
 }
 
-pub fn item_ui(
+fn render_by_events(
     ui: &mut Ui,
+    iter: &mut Iter<Event<'_>>,
     style: &mut Style,
     list: &mut Option<Vec<Option<u64>>>,
     rich_text: &mut Option<RichText>,
@@ -198,195 +260,255 @@ pub fn item_ui(
     row_height: f32,
     diff: f32,
     one_indent: f32,
-    event: Event<'_>,
 ) {
-    match event {
-        Event::Start(tag) => {
-            // draw quoted
-            if style.quoted && !style.inline() && !matches!(tag, Tag::List { .. }) {
-                let rect = ui
-                    .allocate_exact_size(vec2(1.5 * one_indent, row_height), Sense::hover())
-                    .0;
-                let rect = rect.expand2(ui.style().spacing.item_spacing * 0.5);
-                ui.painter().line_segment(
-                    [rect.center_top(), rect.center_bottom()],
-                    (1.0, ui.visuals().weak_text_color()),
-                );
-            }
-
-            match tag {
-                // inline
-                Tag::Strong => {
-                    style.strong = true;
-                }
-                Tag::Emphasis => {
-                    style.italics = true;
-                }
-                Tag::Strikethrough => {
-                    style.strikethrough = true;
-                }
-                Tag::Link(..) => {
-                    style.link = true;
-                }
-
-                // block
-                Tag::Heading(level, ..) => {
-                    style.heading.replace(level as usize);
-                }
-                Tag::BlockQuote => {
-                    style.quoted = true;
-                }
-                Tag::Paragraph => {}
-                Tag::List(n) => {
-                    let list = list.get_or_insert_with(Vec::new);
-                    if list.is_empty() {
-                        style.first_item = true;
+    while let Some(event) = iter.next() {
+        match &event {
+            Event::Start(tag) => {
+                match tag {
+                    // inline
+                    Tag::Strong => {
+                        style.strong = true;
                     }
-                    list.push(n);
-                }
-                Tag::Item => {
-                    let list = list.get_or_insert_with(Vec::new);
-                    let indents = list.len();
-                    let kind = list.last_mut();
+                    Tag::Emphasis => {
+                        style.italics = true;
+                    }
+                    Tag::Strikethrough => {
+                        style.strikethrough = true;
+                    }
+                    Tag::Link(_, href, _) => {
+                        style.link = true;
+                        ui.horizontal_centered(|ui| {
+                            let mut job = LayoutJob::default();
 
-                    if !style.quoted && !style.first_item {
+                            while let Some(event) = iter.next() {
+                                match event {
+                                    // inline start
+                                    Event::Start(tag) => match tag {
+                                        Tag::Strong => {
+                                            style.strong = true;
+                                        }
+                                        Tag::Emphasis => {
+                                            style.italics = true;
+                                        }
+                                        Tag::Strikethrough => {
+                                            style.strikethrough = true;
+                                        }
+                                        _ => {
+                                            unreachable!();
+                                        }
+                                    },
+                                    // inline end
+                                    Event::End(tag) => match tag {
+                                        Tag::Strong => {
+                                            style.strong = false;
+                                        }
+                                        Tag::Emphasis => {
+                                            style.italics = false;
+                                        }
+                                        Tag::Strikethrough => {
+                                            style.strikethrough = false;
+                                        }
+                                        Tag::Link(..) => {
+                                            style.link = false;
+                                            break;
+                                        }
+                                        _ => {
+                                            unreachable!();
+                                        }
+                                    },
+                                    Event::Text(text) => job.append(
+                                        text,
+                                        0.0,
+                                        text_format(
+                                            TextStyle::Body.resolve(ui.style()),
+                                            style,
+                                            ui.style(),
+                                            ui.layout().vertical_align(),
+                                        ),
+                                    ),
+                                    Event::Code(text) => {
+                                        style.code = true;
+                                        job.append(
+                                            text,
+                                            0.0,
+                                            text_format(
+                                                TextStyle::Monospace.resolve(ui.style()),
+                                                style,
+                                                ui.style(),
+                                                ui.layout().vertical_align(),
+                                            ),
+                                        );
+                                        style.code = false;
+                                    }
+                                    _ => {
+                                        unreachable!();
+                                    }
+                                }
+                            }
+
+                            ui.hyperlink_to(job, href.to_string());
+                        });
+                    }
+
+                    // block
+                    Tag::Heading(level, ..) => {
+                        style.heading.replace(*level as usize);
+                    }
+                    Tag::BlockQuote => {
+                        style.quoted = true;
+                        ui.vertical(|ui| {
+                            ui.indent("blockquote", |ui| {
+                                ui.horizontal_wrapped(|ui| {
+                                    render_by_events(
+                                        ui, iter, style, list, rich_text, lang, row_height, diff,
+                                        one_indent,
+                                    );
+                                });
+                            });
+                        });
+                        style.quoted = false;
                         new_line(ui, row_height);
                     }
+                    Tag::List(n) => {
+                        let list = list.get_or_insert_with(Vec::new);
+                        style.newline = !list.is_empty();
+                        list.push(*n);
+                    }
+                    Tag::Item => {
+                        let list = list.get_or_insert_with(Vec::new);
+                        let indents = list.len();
+                        let kind = list.last_mut();
 
-                    let width = 3.0 * one_indent * indents.saturating_sub(1) as f32;
+                        if style.newline {
+                            new_line(ui, row_height);
+                        }
 
-                    ui.allocate_exact_size(vec2(width, row_height), Sense::hover());
-                    let rect = if let Some(Some(number)) = kind {
-                        let rect = numbered_point(ui, one_indent, &number.to_string(), row_height);
-                        *number += 1;
-                        rect
-                    } else {
-                        bulleted_point(ui, one_indent, row_height)
-                    };
-                    ui.allocate_exact_size(vec2(rect.width(), row_height), Sense::hover());
-                }
-                Tag::CodeBlock(kind) => {
-                    style.codeblock = true;
-                    match kind {
-                        CodeBlockKind::Indented => *lang = None,
-                        CodeBlockKind::Fenced(text) => {
-                            lang.replace(text.to_string());
+                        let width = 3.0 * one_indent * indents.saturating_sub(1) as f32;
+
+                        ui.allocate_exact_size(vec2(width, row_height), Sense::hover());
+                        let rect = if let Some(Some(number)) = kind {
+                            let rect =
+                                numbered_point(ui, one_indent, &number.to_string(), row_height);
+                            *number += 1;
+                            rect
+                        } else {
+                            bulleted_point(ui, one_indent, row_height)
+                        };
+                        ui.allocate_exact_size(vec2(rect.width(), row_height), Sense::hover());
+                    }
+                    Tag::CodeBlock(kind) => {
+                        style.codeblock = true;
+                        match kind {
+                            CodeBlockKind::Indented => *lang = None,
+                            CodeBlockKind::Fenced(text) => {
+                                lang.replace(text.to_string());
+                            }
                         }
                     }
-                }
 
-                // TODO: download image
-                Tag::Image(..) => {}
+                    // TODO: download image
+                    Tag::Image(..) => {}
 
-                k @ _ => {
-                    tracing::trace!("{:?}", k);
+                    k @ _ => {
+                        tracing::trace!("{:?}", k);
+                    }
                 }
             }
-        }
-        Event::End(tag) => {
-            // inline
-            match tag {
-                Tag::Strong => {
-                    style.strong = false;
-                }
-                Tag::Emphasis => {
-                    style.italics = false;
-                }
-                Tag::Strikethrough => {
-                    style.strikethrough = false;
-                }
-                Tag::Link(_, href, _) => {
-                    style.link = false;
-                    if let Some(rich_text) = rich_text.take() {
-                        ui.hyperlink_to(rich_text, href);
+            Event::End(tag) => {
+                match tag {
+                    // inline
+                    Tag::Strong => {
+                        style.strong = false;
                     }
-                }
-                // block
-                Tag::Heading(..) => {
-                    style.heading = None;
-                    new_line(ui, row_height);
-                }
-                Tag::List(..) => {
-                    let list = list.get_or_insert_with(Vec::new);
-                    list.pop();
-                    if !style.quoted && list.is_empty() {
+                    Tag::Emphasis => {
+                        style.italics = false;
+                    }
+                    Tag::Strikethrough => {
+                        style.strikethrough = false;
+                    }
+
+                    // block
+                    Tag::Heading(..) => {
+                        style.heading = None;
                         new_line(ui, row_height);
                     }
-                }
-                Tag::BlockQuote => {
-                    style.quoted = false;
-                    // new_line(ui, row_height);
-                }
-                Tag::Paragraph => {
-                    new_line(ui, row_height);
-                }
-                Tag::Image(..) => {
-                    new_line(ui, row_height);
-                }
-                Tag::Item => {
-                    if style.first_item {
-                        style.first_item = false;
+                    Tag::List(..) => {
+                        let list = list.get_or_insert_with(Vec::new);
+                        list.pop();
+                        if list.is_empty() {
+                            new_line(ui, row_height);
+                        }
+                        style.newline = false;
                     }
-                    if style.quoted {
+                    Tag::BlockQuote => {
+                        break;
+                    }
+                    Tag::Paragraph => {
                         new_line(ui, row_height);
                     }
+                    Tag::Image(..) => {
+                        new_line(ui, row_height);
+                    }
+                    Tag::Item => {
+                        style.newline = true;
+                    }
+                    Tag::CodeBlock(..) => {
+                        style.codeblock = false;
+                        new_line(ui, row_height);
+                    }
+
+                    k @ _ => {
+                        tracing::trace!("{:?}", k);
+                    }
                 }
-                Tag::CodeBlock(..) => {
+            }
+
+            // remove `\n`
+            Event::Text(text) => {
+                let mut text = text.to_string();
+                if style.codeblock {
+                    code_view_ui(ui, &text, &lang.take().unwrap_or_default());
                     style.codeblock = false;
-                    new_line(ui, row_height);
+                    continue;
                 }
-
-                k @ _ => {
-                    tracing::trace!("{:?}", k);
+                if style.quoted {
+                    text = text.trim_matches('\n').to_string();
                 }
-            }
-        }
-
-        Event::Text(text) => {
-            let mut text = text.to_string();
-            if style.codeblock {
-                code_view_ui(ui, &text, &lang.take().unwrap_or_default());
-                return;
-            }
-            if style.quoted {
-                text = text.trim_matches('\n').to_string();
-            }
-            let rt = rich_text_from_style(&text, &style, row_height, diff);
-            if style.link {
-                rich_text.replace(rt);
-            } else {
+                if let Some(index) = text.find('\n') {
+                    text = text[..index].to_string();
+                }
+                let rt = rich_text_from_style(&text, &style, row_height, diff);
                 ui.label(rt);
             }
-        }
 
-        // Inline code
-        Event::Code(code) => {
-            style.code = true;
-            let mut text = code.to_string();
-            if style.quoted {
-                text = text.trim_matches('\n').to_string();
-            }
-            let rt = rich_text_from_style(&text, &style, row_height, diff);
-            if style.link {
-                rich_text.replace(rt);
-            } else {
+            // Inline code
+            Event::Code(code) => {
+                style.code = true;
+                let mut text = code.to_string();
+                if style.quoted {
+                    text = text.trim_matches('\n').to_string();
+                }
+                if let Some(index) = text.find('\n') {
+                    text = text[..index].to_string();
+                }
+                let rt = rich_text_from_style(&text, &style, row_height, diff);
                 ui.label(rt);
+                style.code = false;
             }
-            style.code = false;
-        }
 
-        Event::SoftBreak => {
-            ui.label(" ");
-        }
-        Event::HardBreak => {
-            new_line(ui, row_height);
-        }
-        Event::Rule => {
-            ui.add(Separator::default().horizontal());
-        }
+            Event::SoftBreak => {
+                ui.label(" ");
+            }
+            Event::HardBreak => {
+                new_line(ui, row_height);
+            }
+            Event::Rule => {
+                ui.add(Separator::default().horizontal());
+            }
 
-        k @ _ => {
-            tracing::trace!("{:?}", k);
-        }
-    };
+            k @ _ => {
+                tracing::trace!("{:?}", k);
+            }
+        };
+    }
 }
