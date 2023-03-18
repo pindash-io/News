@@ -309,7 +309,6 @@ fn render_by_events(
                                             style.strikethrough = false;
                                         }
                                         Tag::Link(..) => {
-                                            style.link = false;
                                             break;
                                         }
                                         _ => {
@@ -348,6 +347,7 @@ fn render_by_events(
 
                             ui.hyperlink_to(job, href.to_string());
                         });
+                        style.link = false;
                     }
 
                     // block
