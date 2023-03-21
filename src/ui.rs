@@ -387,7 +387,10 @@ impl eframe::App for App {
             egui::CentralPanel::default().show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let mut events = Vec::new();
-                    easymark::parser(&self.article.content.to_owned(), &mut events);
+                    // easymark::parser(
+                    //     &htmlize::unescape(self.article.content.to_owned()),
+                    //     &mut events,
+                    // );
                     // easymark::parser(include_str!("../tests/fixtures/simple.html"), &mut events);
                     // easymark::parser(
                     //     include_str!("../tests/fixtures/blockquote.html"),
@@ -396,6 +399,10 @@ impl eframe::App for App {
                     // easymark::parser(include_str!("../tests/fixtures/list.html"), &mut events);
                     // easymark::parser(include_str!("../tests/fixtures/code.html"), &mut events);
                     // easymark::parser(include_str!("../tests/fixtures/h_list.html"), &mut events);
+                    easymark::parser(
+                        include_str!("../tests/fixtures/haskellweekly.html"),
+                        &mut events,
+                    );
                     easymark::render(ui, events);
                 });
             });

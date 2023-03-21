@@ -215,6 +215,7 @@ fn new_line(ui: &mut Ui, row_height: f32) {
 }
 
 pub fn render(ui: &mut Ui, events: Vec<Event<'_>>) -> Result<()> {
+    dbg!(&events);
     let initial_size = vec2(ui.available_width(), ui.spacing().interact_size.y);
     let layout = Layout::left_to_right(Align::BOTTOM).with_main_wrap(true);
 
@@ -471,12 +472,7 @@ fn render_by_events(
                     style.codeblock = false;
                     continue;
                 }
-                if style.quoted {
-                    text = text.trim_matches('\n').to_string();
-                }
-                if let Some(index) = text.find('\n') {
-                    text = text[..index].to_string();
-                }
+                text = text.trim_matches('\n').to_string();
                 let rt = rich_text_from_style(&text, &style, row_height, diff);
                 ui.label(rt);
             }

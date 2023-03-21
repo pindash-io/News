@@ -1,4 +1,4 @@
-use std::{clone, fs};
+use std::{clone, fs, io::Write, os::unix::prelude::FileExt};
 
 use anyhow::Result;
 use pindash_news::easymark;
@@ -76,6 +76,32 @@ fn parse_h_list() -> Result<()> {
 
     let mut events = Vec::new();
     easymark::parser(content, &mut events);
+
+    dbg!(events);
+    Ok(())
+}
+
+#[test]
+fn parse_escape() -> Result<()> {
+    let content = include_str!("fixtures/haskellweekly.atom");
+
+    let mut f = fs::File::create("./haskellweekly.test.html")?;
+    let mut buf = Vec::new();
+    html_escape::decode_html_entities_to_vec(content, &mut buf);
+    f.write_all(&buf)?;
+    f.flush()?;
+
+    let mut f = fs::File::create("./haskellweekly.test2.html")?;
+    let mut buf = Vec::new();
+    html_escape::decode_html_entities_to_vec(content, &mut buf);
+    f.write_all(htmlize::unescape_in(content, htmlize::Context::Attribute).as_bytes())?;
+    f.flush()?;
+
+    let mut events = Vec::new();
+    easymark::parser(
+        dbg!(htmlize::unescape_in(content, htmlize::Context::Attribute)),
+        &mut events,
+    );
 
     dbg!(events);
     Ok(())
