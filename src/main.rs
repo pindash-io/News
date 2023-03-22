@@ -442,7 +442,7 @@ fn main() -> Result<()> {
             }
 
             Ok::<(), Error>(())
-        });
+        })?;
 
         drop(rt);
         Ok::<(), Error>(())
@@ -480,8 +480,9 @@ fn main() -> Result<()> {
             Box::new(|cc| Box::new(ui::App::new(&cc, store))),
         )
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
         Ok::<(), Error>(())
-    });
+    })?;
 
     tracing::info!("app exit!");
 
