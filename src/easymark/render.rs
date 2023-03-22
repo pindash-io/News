@@ -277,77 +277,75 @@ fn render_by_events(
                     }
                     Tag::Link(_, href, _) => {
                         style.link = true;
-                        ui.horizontal_wrapped(|ui| {
-                            ui.horizontal_centered(|ui| {
-                                let mut job = LayoutJob::default();
+                        ui.horizontal_centered(|ui| {
+                            let mut job = LayoutJob::default();
 
-                                while let Some(event) = iter.next() {
-                                    match event {
-                                        // inline start
-                                        Event::Start(tag) => match tag {
-                                            Tag::Strong => {
-                                                style.strong = true;
-                                            }
-                                            Tag::Emphasis => {
-                                                style.italics = true;
-                                            }
-                                            Tag::Strikethrough => {
-                                                style.strikethrough = true;
-                                            }
-                                            _ => {
-                                                unreachable!();
-                                            }
-                                        },
-                                        // inline end
-                                        Event::End(tag) => match tag {
-                                            Tag::Strong => {
-                                                style.strong = false;
-                                            }
-                                            Tag::Emphasis => {
-                                                style.italics = false;
-                                            }
-                                            Tag::Strikethrough => {
-                                                style.strikethrough = false;
-                                            }
-                                            Tag::Link(..) => {
-                                                break;
-                                            }
-                                            _ => {
-                                                unreachable!();
-                                            }
-                                        },
-                                        Event::Text(text) => job.append(
-                                            text,
-                                            0.0,
-                                            text_format(
-                                                TextStyle::Body.resolve(ui.style()),
-                                                style,
-                                                ui.style(),
-                                                ui.layout().vertical_align(),
-                                            ),
-                                        ),
-                                        Event::Code(text) => {
-                                            style.code = true;
-                                            job.append(
-                                                text,
-                                                0.0,
-                                                text_format(
-                                                    TextStyle::Monospace.resolve(ui.style()),
-                                                    style,
-                                                    ui.style(),
-                                                    ui.layout().vertical_align(),
-                                                ),
-                                            );
-                                            style.code = false;
+                            while let Some(event) = iter.next() {
+                                match event {
+                                    // inline start
+                                    Event::Start(tag) => match tag {
+                                        Tag::Strong => {
+                                            style.strong = true;
+                                        }
+                                        Tag::Emphasis => {
+                                            style.italics = true;
+                                        }
+                                        Tag::Strikethrough => {
+                                            style.strikethrough = true;
                                         }
                                         _ => {
                                             unreachable!();
                                         }
+                                    },
+                                    // inline end
+                                    Event::End(tag) => match tag {
+                                        Tag::Strong => {
+                                            style.strong = false;
+                                        }
+                                        Tag::Emphasis => {
+                                            style.italics = false;
+                                        }
+                                        Tag::Strikethrough => {
+                                            style.strikethrough = false;
+                                        }
+                                        Tag::Link(..) => {
+                                            break;
+                                        }
+                                        _ => {
+                                            unreachable!();
+                                        }
+                                    },
+                                    Event::Text(text) => job.append(
+                                        text,
+                                        0.0,
+                                        text_format(
+                                            TextStyle::Body.resolve(ui.style()),
+                                            style,
+                                            ui.style(),
+                                            ui.layout().vertical_align(),
+                                        ),
+                                    ),
+                                    Event::Code(text) => {
+                                        style.code = true;
+                                        job.append(
+                                            text,
+                                            0.0,
+                                            text_format(
+                                                TextStyle::Monospace.resolve(ui.style()),
+                                                style,
+                                                ui.style(),
+                                                ui.layout().vertical_align(),
+                                            ),
+                                        );
+                                        style.code = false;
+                                    }
+                                    _ => {
+                                        unreachable!();
                                     }
                                 }
+                            }
 
-                                ui.hyperlink_to(job, href.to_string());
-                            });
+                            ui.hyperlink_to(job, href.to_string());
                         });
                         style.link = false;
                     }
