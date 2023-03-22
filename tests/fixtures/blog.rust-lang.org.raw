@@ -1,0 +1,101 @@
+&lt;p&gt;The Rust team is happy to announce a new version of Rust, 1.68.0. Rust is a
+programming language empowering everyone to build reliable and efficient
+software.&lt;/p&gt;
+&lt;p&gt;If you have a previous version of Rust installed via rustup, you can get 1.68.0
+with:&lt;/p&gt;
+&lt;pre&gt;&lt;code class&#x3D;&quot;language-console&quot;&gt;rustup update stable
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;If you don&#x27;t have it already, you can &lt;a href&#x3D;&quot;https://www.rust-lang.org/install.html&quot;&gt;get
+&lt;code&gt;rustup&lt;/code&gt;&lt;/a&gt; from the appropriate page on
+our website, and check out the &lt;a href&#x3D;&quot;https://github.com/rust-lang/rust/blob/master/RELEASES.md#version-1680-2023-03-09&quot;&gt;detailed release notes for
+1.68.0&lt;/a&gt;
+on GitHub.&lt;/p&gt;
+&lt;p&gt;If you&#x27;d like to help us out by testing future releases, you might consider
+updating locally to use the beta channel (&lt;code&gt;rustup default beta&lt;/code&gt;) or the nightly
+channel (&lt;code&gt;rustup default nightly&lt;/code&gt;). Please
+&lt;a href&#x3D;&quot;https://github.com/rust-lang/rust/issues/new/choose&quot;&gt;report&lt;/a&gt; any bugs you
+might come across!&lt;/p&gt;
+&lt;h2&gt;&lt;a href&#x3D;&quot;#whats-in-1680-stable&quot; aria-hidden&#x3D;&quot;true&quot; class&#x3D;&quot;anchor&quot; id&#x3D;&quot;whats-in-1680-stable&quot;&gt;&lt;/a&gt;What&#x27;s in 1.68.0 stable&lt;/h2&gt;
+&lt;h3&gt;&lt;a href&#x3D;&quot;#cargos-sparse-protocol&quot; aria-hidden&#x3D;&quot;true&quot; class&#x3D;&quot;anchor&quot; id&#x3D;&quot;cargos-sparse-protocol&quot;&gt;&lt;/a&gt;Cargo&#x27;s sparse protocol&lt;/h3&gt;
+&lt;p&gt;Cargo&#x27;s &amp;quot;sparse&amp;quot; registry protocol has been stabilized for reading the index of
+crates, along with infrastructure at &lt;code&gt;https://index.crates.io/&lt;/code&gt; for those
+published in the primary crates.io registry. The prior git protocol (which is
+still the default) clones a repository that indexes &lt;em&gt;all&lt;/em&gt; crates available in
+the registry, but this has started to hit scaling limitations, with noticeable
+delays while updating that repository. The new protocol should provide a
+significant performance improvement when accessing crates.io, as it will only
+download information about the subset of crates that you actually use.&lt;/p&gt;
+&lt;p&gt;To use the sparse protocol with crates.io, set the environment variable
+&lt;code&gt;CARGO_REGISTRIES_CRATES_IO_PROTOCOL&#x3D;sparse&lt;/code&gt;, or edit your
+&lt;a href&#x3D;&quot;https://doc.rust-lang.org/cargo/reference/config.html&quot;&gt;&lt;code&gt;.cargo/config.toml&lt;/code&gt; file&lt;/a&gt;
+to add:&lt;/p&gt;
+&lt;pre&gt;&lt;code class&#x3D;&quot;language-toml&quot;&gt;[registries.crates-io]
+protocol &#x3D; &amp;quot;sparse&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;The sparse protocol is currently planned to become the default for crates.io in
+the 1.70.0 release in a few months. For more information, please see the prior
+&lt;a href&#x3D;&quot;https://blog.rust-lang.org/inside-rust/2023/01/30/cargo-sparse-protocol.html&quot;&gt;announcement&lt;/a&gt;
+on the Inside Rust Blog, as well as
+&lt;a href&#x3D;&quot;https://rust-lang.github.io/rfcs/2789-sparse-index.html&quot;&gt;RFC 2789&lt;/a&gt;
+and the current
+&lt;a href&#x3D;&quot;https://doc.rust-lang.org/stable/cargo/reference/registry-index.html#sparse-protocol&quot;&gt;documentation&lt;/a&gt;
+in the Cargo Book.&lt;/p&gt;
+&lt;h3&gt;&lt;a href&#x3D;&quot;#local-pin-construction&quot; aria-hidden&#x3D;&quot;true&quot; class&#x3D;&quot;anchor&quot; id&#x3D;&quot;local-pin-construction&quot;&gt;&lt;/a&gt;Local &lt;code&gt;Pin&lt;/code&gt; construction&lt;/h3&gt;
+&lt;p&gt;The new &lt;a href&#x3D;&quot;https://doc.rust-lang.org/stable/std/pin/macro.pin.html&quot;&gt;&lt;code&gt;pin!&lt;/code&gt;&lt;/a&gt; macro
+constructs a &lt;code&gt;Pin&amp;lt;&amp;amp;mut T&amp;gt;&lt;/code&gt; from a &lt;code&gt;T&lt;/code&gt; expression, anonymously captured in local
+state. This is often called stack-pinning, but that &amp;quot;stack&amp;quot; could also be the
+captured state of an &lt;code&gt;async fn&lt;/code&gt; or block. This macro is similar to some crates,
+like &lt;a href&#x3D;&quot;https://docs.rs/tokio/1/tokio/macro.pin.html&quot;&gt;&lt;code&gt;tokio::pin!&lt;/code&gt;&lt;/a&gt;, but the
+standard library can take advantage of &lt;code&gt;Pin&lt;/code&gt; internals and &lt;a href&#x3D;&quot;https://doc.rust-lang.org/stable/reference/destructors.html#temporary-lifetime-extension&quot;&gt;temporary lifetime
+extension&lt;/a&gt;
+for a more expression-like macro.&lt;/p&gt;
+&lt;pre&gt;&lt;code class&#x3D;&quot;language-rust&quot;&gt;/// Runs a future to completion.
+fn block_on&amp;lt;F: Future&amp;gt;(future: F) -&amp;gt; F::Output {
+    let waker_that_unparks_thread &#x3D; todo!();
+    let mut cx &#x3D; Context::from_waker(&amp;amp;waker_that_unparks_thread);
+    // Pin the future so it can be polled.
+    let mut pinned_future &#x3D; pin!(future);
+    loop {
+        match pinned_future.as_mut().poll(&amp;amp;mut cx) {
+            Poll::Pending &#x3D;&amp;gt; thread::park(),
+            Poll::Ready(result) &#x3D;&amp;gt; return result,
+        }
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;In this example, the original &lt;code&gt;future&lt;/code&gt; will be moved into a temporary local,
+referenced by the new &lt;code&gt;pinned_future&lt;/code&gt; with type &lt;code&gt;Pin&amp;lt;&amp;amp;mut F&amp;gt;&lt;/code&gt;, and that pin is
+subject to the normal borrow checker to make sure it can&#x27;t outlive that local.&lt;/p&gt;
+&lt;h3&gt;&lt;a href&#x3D;&quot;#default-alloc-error-handler&quot; aria-hidden&#x3D;&quot;true&quot; class&#x3D;&quot;anchor&quot; id&#x3D;&quot;default-alloc-error-handler&quot;&gt;&lt;/a&gt;Default &lt;code&gt;alloc&lt;/code&gt; error handler&lt;/h3&gt;
+&lt;p&gt;When allocation fails in Rust, APIs like &lt;code&gt;Box::new&lt;/code&gt; and &lt;code&gt;Vec::push&lt;/code&gt; have no way
+to indicate that failure, so some divergent execution path needs to be taken.
+When using the &lt;code&gt;std&lt;/code&gt; crate, the program will print to &lt;code&gt;stderr&lt;/code&gt; and abort.
+As of Rust 1.68.0, binaries which include &lt;code&gt;std&lt;/code&gt; will continue to have
+this behavior. Binaries which do not include &lt;code&gt;std&lt;/code&gt;, only including &lt;code&gt;alloc&lt;/code&gt;, will now &lt;code&gt;panic!&lt;/code&gt;
+on allocation failure, which may be further adjusted via a &lt;code&gt;#[panic_handler]&lt;/code&gt; if desired.&lt;/p&gt;
+&lt;p&gt;In the future, it&#x27;s likely that the behavior for &lt;code&gt;std&lt;/code&gt; will also be changed to match that of &lt;code&gt;alloc&lt;/code&gt;-only binaries.&lt;/p&gt;
+&lt;h3&gt;&lt;a href&#x3D;&quot;#stabilized-apis&quot; aria-hidden&#x3D;&quot;true&quot; class&#x3D;&quot;anchor&quot; id&#x3D;&quot;stabilized-apis&quot;&gt;&lt;/a&gt;Stabilized APIs&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href&#x3D;&quot;https://doc.rust-lang.org/stable/std/pin/macro.pin.html&quot;&gt;&lt;code&gt;{core,std}::pin::pin!&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href&#x3D;&quot;https://doc.rust-lang.org/stable/std/primitive.f32.html#impl-From%3Cbool%3E-for-f32&quot;&gt;&lt;code&gt;impl From&amp;lt;bool&amp;gt; for {f32,f64}&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href&#x3D;&quot;https://doc.rust-lang.org/stable/std/path/constant.MAIN_SEPARATOR_STR.html&quot;&gt;&lt;code&gt;std::path::MAIN_SEPARATOR_STR&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href&#x3D;&quot;https://doc.rust-lang.org/stable/std/path/struct.PathBuf.html#impl-DerefMut-for-PathBuf&quot;&gt;&lt;code&gt;impl DerefMut for PathBuf&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;These APIs are now stable in const contexts:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href&#x3D;&quot;https://doc.rust-lang.org/stable/std/collections/struct.VecDeque.html#method.new&quot;&gt;&lt;code&gt;VecDeque::new&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;&lt;a href&#x3D;&quot;#other-changes&quot; aria-hidden&#x3D;&quot;true&quot; class&#x3D;&quot;anchor&quot; id&#x3D;&quot;other-changes&quot;&gt;&lt;/a&gt;Other changes&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;As &lt;a href&#x3D;&quot;https://blog.rust-lang.org/2023/01/09/android-ndk-update-r25.html&quot;&gt;previously announced&lt;/a&gt;,
+Android platform support in Rust is now targeting NDK r25, which corresponds to
+a minimum supported API level of 19 (KitKat).&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Check out everything that changed in
+&lt;a href&#x3D;&quot;https://github.com/rust-lang/rust/blob/stable/RELEASES.md#version-1680-2023-03-09&quot;&gt;Rust&lt;/a&gt;,
+&lt;a href&#x3D;&quot;https://github.com/rust-lang/cargo/blob/master/CHANGELOG.md#cargo-168-2023-03-09&quot;&gt;Cargo&lt;/a&gt;,
+and &lt;a href&#x3D;&quot;https://github.com/rust-lang/rust-clippy/blob/master/CHANGELOG.md#rust-168&quot;&gt;Clippy&lt;/a&gt;.&lt;/p&gt;
+&lt;h3&gt;&lt;a href&#x3D;&quot;#contributors-to-1680&quot; aria-hidden&#x3D;&quot;true&quot; class&#x3D;&quot;anchor&quot; id&#x3D;&quot;contributors-to-1680&quot;&gt;&lt;/a&gt;Contributors to 1.68.0&lt;/h3&gt;
+&lt;p&gt;Many people came together to create Rust 1.68.0.
+We couldn&#x27;t have done it without all of you.
+&lt;a href&#x3D;&quot;https://thanks.rust-lang.org/rust/1.68.0/&quot;&gt;Thanks!&lt;/a&gt;&lt;/p&gt;
