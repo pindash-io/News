@@ -278,50 +278,7 @@ fn main() -> Result<()> {
                                         return Ok::<(), Error>(());
                                     }
 
-                                    let site = links
-                                        .iter()
-                                        .find_map(|link| {
-                                            if !link.href.ends_with(".xml")
-                                                && !link.href.ends_with(".atom")
-                                                && !link.href.ends_with("rss/")
-                                                && !link.href.ends_with("rss")
-                                                && !link.href.ends_with("atom/")
-                                                && !link.href.ends_with("atom")
-                                                && !link.href.ends_with("feed")
-                                                && !link.href.ends_with("feed/")
-                                            {
-                                                Some(link.href.to_owned())
-                                            } else {
-                                                None
-                                            }
-                                        })
-                                        .or_else(|| {
-                                            // Fixed, https://go.dev/blog
-                                            if id.contains(',') {
-                                                None
-                                            } else {
-                                                url::Url::parse(&id)
-                                                    .map(|link| link.as_str().to_owned())
-                                                    .ok()
-                                            }
-                                        })
-                                        .unwrap_or_else(|| {
-                                            let url = links
-                                                .first()
-                                                .map(|link| link.href.to_owned())
-                                                .unwrap_or(feed.url.to_owned());
-
-                                            url.trim_end_matches("rss.xml")
-                                                .trim_end_matches("atom.xml")
-                                                .trim_end_matches("index.xml")
-                                                .trim_end_matches("feed.xml")
-                                                .trim_end_matches("feed.atom")
-                                                .trim_end_matches("feed/")
-                                                .trim_end_matches("feed")
-                                                .trim_end_matches("rss/")
-                                                .trim_end_matches("rss")
-                                                .to_string()
-                                        });
+                                    let site = utils::extract_site_url(feed.url.clone(), links);
 
                                     let published = db::update_feed_ext_and_upsert_articles(
                                         &mut conn,

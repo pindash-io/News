@@ -9,6 +9,7 @@ pub mod db;
 pub mod easymark;
 pub mod models;
 pub mod ui;
+pub mod utils;
 pub mod windows;
 
 #[derive(Clone, Debug, PartialEq)]
